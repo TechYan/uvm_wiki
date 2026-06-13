@@ -54,7 +54,7 @@ MODULE_RE = re.compile(r"^\s*(?:module|interface|program)\s+([A-Za-z_]\w*)\b")
 INCLUDE_RE = re.compile(r'^\s*`include\s+"([^"]+)"')
 IMPORT_RE = re.compile(r"^\s*import\s+([A-Za-z_][\w:]*)::\*\s*;")
 CREATE_RE = re.compile(r"([A-Za-z_][\w:]*)\s*(?:#\s*\([^;]*?\))?\s*::\s*type_id\s*::\s*create\s*\((.*?)\)", re.S)
-VENDOR_NEW_RE = re.compile(r"`" + "AV" + r"ERY_NEW(?:_PARENT)?\s*\(\s*([A-Za-z_][\w:]*)\s*,(.*?)\)", re.S)
+CUSTOM_NEW_MACRO_RE = re.compile(r"`[A-Za-z0-9_]+_NEW(?:_PARENT)?\s*\(\s*([A-Za-z_][\w:]*)\s*,(.*?)\)", re.S)
 CONFIG_CALL_RE = re.compile(r"uvm_config_db\s*#\s*\((.*?)\)\s*::\s*(set|get)\s*\(", re.S)
 CONNECT_RE = re.compile(r"([A-Za-z_][\w\.\[\]]*)\s*\.\s*connect\s*\(\s*([A-Za-z_][\w\.\[\]]*)")
 TLM_PORT_DECL_RE = re.compile(
@@ -341,7 +341,7 @@ def scan_file(path: Path, root: Path) -> tuple[list[dict[str, Any]], list[dict[s
         for m in CREATE_RE.finditer(clean):
             dst = normalize_type(m.group(1))
             edges.append({"kind": "creates", "src": owner, "dst": dst, "instance": arg_field(m.group(2), 0), "file": rel, "line": lineno})
-        for m in VENDOR_NEW_RE.finditer(clean):
+        for m in CUSTOM_NEW_MACRO_RE.finditer(clean):
             dst = normalize_type(m.group(1))
             edges.append({"kind": "creates", "src": owner, "dst": dst, "instance": arg_field(m.group(2), 0), "file": rel, "line": lineno})
         for m in TLM_PORT_DECL_RE.finditer(clean):
@@ -528,7 +528,7 @@ def build_trees(symbols: list[dict[str, Any]], edges: list[dict[str, Any]]) -> d
     return {
         "inheritance": {
             "title": "Inheritance",
-            "description": "class extends hierarchy; external UVM/vendor bases are kept as roots when visible.",
+            "description": "class extends hierarchy; external UVM or custom bases are kept as roots when visible.",
             "root_count": len(inheritance_roots),
             "edge_count": inheritance_edges,
             "budget": inheritance_budget,
@@ -536,7 +536,7 @@ def build_trees(symbols: list[dict[str, Any]], edges: list[dict[str, Any]]) -> d
         },
         "topology": {
             "title": "Create / Member Topology",
-            "description": "Likely VIP object/component hierarchy inferred from type_id::create, vendor new macros, and class member declarations.",
+            "description": "Likely VIP object/component hierarchy inferred from type_id::create, custom new macros, and class member declarations.",
             "root_count": len(topology_roots),
             "edge_count": topology_edges,
             "budget": topology_budget,
