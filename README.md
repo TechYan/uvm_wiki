@@ -7,6 +7,10 @@ It generates two canonical artifacts:
 - `uvm_wiki_ai.json`: structured symbols, relations, hierarchies, TLM ports, connections, locations, and bounded source snippets for AI agents.
 - `uvm_wiki.html`: one interactive application containing Architecture, Wiki Graph, TLM Connections, and Code Explorer views.
 
+The Architecture view uses a UVM Cookbook-style visual grammar: nested test/env containers, expandable agent internals, configuration and checker blocks, resolved TLM connections, and an external virtual-interface boundary. Large environments stay compact until a component is selected and focused.
+
+No separate `tb_arch` description is required. The architecture is projected from static source evidence in the JSON index. Runtime factory overrides, dynamic instances, and exact DUT/BFM binding remain explicitly unresolved unless runtime evidence is added later.
+
 ## Offline Linux Install
 
 The bundled dependency package targets Linux x86_64, CPython 3.11, and glibc 2.27 or newer. It installs into a user-owned virtual environment and does not require root or network access.

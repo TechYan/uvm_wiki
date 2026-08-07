@@ -44,7 +44,7 @@ python scripts/uvm_wiki.py build --src /path/to/uvm --parser auto --out /path/to
 This writes:
 
 - `uvm_wiki_ai.json`: canonical AI index.
-- `uvm_wiki.html`: unified Architecture, Wiki Graph, TLM Connections, and Code Explorer application.
+- `uvm_wiki.html`: unified Architecture, Wiki Graph, TLM Connections, and Code Explorer application. Architecture uses nested test/env containers, expandable agent internals, config blocks, TLM overlays, and virtual-interface boundaries.
 - `.cache/parse_cache.json`: file-level incremental cache.
 
 Build mode embeds bounded source snippets. Adjust or disable them when needed:
@@ -75,6 +75,8 @@ python scripts/uvm_wiki.py build --src /path/to/uvm --rebuild
 ```
 
 Read [references/schema.md](references/schema.md) when an agent needs the JSON field contract.
+
+For architecture questions, query `uvm_architecture` before rebuilding topology from raw relations. It contains inherited component children, config auxiliaries, effective ports, resolved connection endpoints, and virtual-interface access evidence. Treat it as a static projection: do not claim runtime factory overrides, dynamic instance counts, final config-db effects, or exact DUT/BFM bindings without simulation evidence.
 
 ## Validate A Delivery
 

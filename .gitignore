@@ -1,4 +1,5 @@
 .test-output/
+.reference/
 dist/
 uvm_wiki_output/
 .venv/

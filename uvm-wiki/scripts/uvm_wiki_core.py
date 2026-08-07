@@ -14,7 +14,8 @@ from typing import Any, Callable, Iterable
 
 
 SCHEMA_VERSION = "uvm-wiki-ai.v1"
-CACHE_VERSION = 3
+ARCHITECTURE_SCHEMA_VERSION = "uvm-architecture.v2"
+CACHE_VERSION = 6
 PYSLANG_AST_MAX_BYTES = 512 * 1024
 SOURCE_EXTS = {".sv", ".svh", ".v", ".vh"}
 SKIP_DIRS = {".git", ".svn", "__pycache__", ".uvm_wiki", "node_modules"}
@@ -34,6 +35,7 @@ ROLE_COLORS = {
     "coverage": "#4f46e5",
     "interface": "#0284c7",
     "module": "#475569",
+    "component": "#475569",
     "class": "#64748b",
     "external": "#94a3b8",
 }
@@ -123,17 +125,17 @@ def normalize_type(value: str | None) -> str | None:
 def classify_role(name: str, base: str | None = None) -> str:
     text = f"{name} {base or ''}".lower()
     rules = [
+        ("config", ("_config", "_cfg", "cfg_info")),
         ("test", ("uvm_test", "_test")),
         ("env", ("uvm_env", "_env", "_uvc")),
         ("agent", ("uvm_agent", "_agent")),
         ("driver", ("uvm_driver", "_driver", "_drv")),
+        ("coverage", ("coverage", "_cov")),
         ("monitor", ("uvm_monitor", "_monitor", "_mon")),
         ("sequencer", ("uvm_sequencer", "_sequencer", "_seqr")),
         ("scoreboard", ("uvm_scoreboard", "_scoreboard", "_scbd", "_sbd")),
         ("sequence_item", ("uvm_sequence_item", "_transaction", "_item", "_packet", "_pkt", "_tlp")),
         ("sequence", ("uvm_sequence", "_sequence", "_seq")),
-        ("config", ("_config", "_cfg", "cfg_info")),
-        ("coverage", ("coverage", "_cov")),
     ]
     for role, terms in rules:
         if any(term in text for term in terms):
@@ -321,7 +323,23 @@ def parse_light(path: Path, root: Path) -> dict[str, Any]:
             for match in CREATE_RE.finditer(clean):
                 match_line = location(match.start())
                 args = balanced_args(clean, match.end() - 1)
-                relations.append({"kind": "creates", "source": statement_owner(match.start()), "target": normalize_type(match.group(1)), "instance": argument(args or "", 0), "file": relative, "line": match_line})
+                values = split_args(args or "")
+                instance_name = argument(args or "", 0)
+                assignment = re.search(r"([A-Za-z_]\w*(?:\s*\[[^\]]+\])?)\s*=\s*$", clean[: match.start()])
+                instance = assignment.group(1).replace(" ", "") if assignment else instance_name
+                relation = {
+                    "kind": "creates",
+                    "source": statement_owner(match.start()),
+                    "target": normalize_type(match.group(1)),
+                    "instance": instance,
+                    "file": relative,
+                    "line": match_line,
+                }
+                if instance_name and instance_name != instance:
+                    relation["instance_name"] = instance_name
+                if len(values) > 1:
+                    relation["parent"] = argument(args or "", 1)
+                relations.append(relation)
         if VENDOR_NEW_TOKEN in clean:
             for match in VENDOR_NEW_RE.finditer(clean):
                 match_line = location(match.start())
@@ -348,7 +366,21 @@ def parse_light(path: Path, root: Path) -> dict[str, Any]:
                 match_line = location(match.start())
                 args = balanced_args(clean, match.end() - 1)
                 if args is not None:
-                    relations.append({"kind": f"config_db_{match.group(2)}", "source": statement_owner(match.start()), "target": argument(args, 2), "config_type": " ".join(match.group(1).split()), "file": relative, "line": match_line})
+                    relation = {
+                        "kind": f"config_db_{match.group(2)}",
+                        "source": statement_owner(match.start()),
+                        "target": argument(args, 2),
+                        "config_type": " ".join(match.group(1).split()),
+                        "file": relative,
+                        "line": match_line,
+                    }
+                    scope = argument(args, 1)
+                    value = argument(args, 3)
+                    if scope is not None:
+                        relation["scope"] = scope
+                    if value is not None:
+                        relation["value"] = value
+                    relations.append(relation)
 
         field = FIELD_RE.match(clean) if len(clean) < 16384 else None
         if field:
@@ -507,6 +539,572 @@ def build_hierarchies(symbols: list[dict[str, Any]], relations: list[dict[str, A
     }
 
 
+def build_uvm_architecture(symbols: list[dict[str, Any]], relations: list[dict[str, Any]]) -> dict[str, Any]:
+    """Project parser facts into a static, instance-oriented UVM architecture."""
+
+    component_roles = {"test", "env", "agent", "driver", "monitor", "sequencer", "scoreboard", "coverage"}
+    object_roles = {"config", "sequence", "sequence_item"}
+    component_bases = {
+        "uvm_component",
+        "uvm_test",
+        "uvm_env",
+        "uvm_agent",
+        "uvm_driver",
+        "uvm_monitor",
+        "uvm_sequencer",
+        "uvm_scoreboard",
+        "uvm_subscriber",
+        "uvm_reg_predictor",
+    }
+    object_bases = {"uvm_object", "uvm_sequence", "uvm_sequence_item", "uvm_transaction", "uvm_report_object"}
+    role_order = {
+        "test": 0,
+        "env": 1,
+        "agent": 2,
+        "sequencer": 3,
+        "driver": 4,
+        "monitor": 5,
+        "scoreboard": 6,
+        "coverage": 7,
+        "component": 8,
+        "config": 9,
+    }
+
+    def symbol_score(item: dict[str, Any]) -> tuple[int, int, int]:
+        return (
+            0 if item.get("pyslang_only") else 1,
+            1 if item.get("base") else 0,
+            1 if int(item.get("line") or 1) > 1 else 0,
+        )
+
+    classes: dict[str, dict[str, Any]] = {}
+    for item in symbols:
+        if item.get("kind") != "class" or not item.get("name"):
+            continue
+        name = str(item["name"])
+        if name not in classes or symbol_score(item) > symbol_score(classes[name]):
+            classes[name] = dict(item)
+
+    base_by_name = {name: item.get("base") for name, item in classes.items()}
+    for relation in relations:
+        if relation.get("kind") != "extends":
+            continue
+        source = str(relation.get("source") or "")
+        target = normalize_type(str(relation.get("target") or ""))
+        if source in classes and target and not base_by_name.get(source):
+            base_by_name[source] = target
+
+    def short_type(value: str | None) -> str:
+        return str(value or "").split(".")[-1]
+
+    def class_name(value: Any) -> str:
+        text = str(value or "")
+        return text if text in classes else short_type(text)
+
+    component_status: dict[str, bool] = {}
+    component_reason: dict[str, str] = {}
+
+    def is_component(name: str, visiting: set[str] | None = None) -> bool:
+        if name in component_status:
+            return component_status[name]
+        item = classes.get(name)
+        if not item:
+            return False
+        visiting = set() if visiting is None else set(visiting)
+        if name in visiting:
+            return False
+        visiting.add(name)
+        base = class_name(base_by_name.get(name))
+        terminal = short_type(base).lower()
+        if terminal in component_bases:
+            component_status[name] = True
+            component_reason[name] = "uvm_base"
+            return True
+        if terminal.endswith("_component") or terminal == "component":
+            component_status[name] = True
+            component_reason[name] = "component_base"
+            return True
+        if terminal in object_bases:
+            component_status[name] = False
+            return False
+        if base in classes and is_component(base, visiting):
+            component_status[name] = True
+            component_reason[name] = "base_chain"
+            return True
+        role = str(item.get("role") or "")
+        inferred = not base and role in component_roles and "uvm" in name.lower()
+        component_status[name] = inferred
+        if inferred:
+            component_reason[name] = "uvm_role"
+        return inferred
+
+    for name in classes:
+        is_component(name)
+
+    # A parent-bearing factory create is strong component evidence even when a
+    # proprietary base class is outside the indexed source tree.
+    changed = True
+    while changed:
+        changed = False
+        for relation in relations:
+            if relation.get("kind") != "creates" or not relation.get("parent"):
+                continue
+            source = class_name(str(relation.get("source") or "").split(".", 1)[0])
+            target = class_name(relation.get("target"))
+            target_item = classes.get(target)
+            if not component_status.get(source, False) or not target_item:
+                continue
+            if target_item.get("role") in object_roles or short_type(base_by_name.get(target)).lower() in object_bases:
+                continue
+            if not component_status.get(target, False):
+                component_status[target] = True
+                component_reason[target] = "component_factory_create"
+                changed = True
+
+    component_names = {name for name, status in component_status.items() if status}
+
+    def declared_component_role(name: str) -> str:
+        role = str(classes.get(name, {}).get("role") or "component")
+        return role if role in component_roles else "component"
+
+    def inferred_instance_role(type_name: str, instance: str | None = None) -> str:
+        declared = declared_component_role(type_name)
+        if declared != "component":
+            return declared
+        normalized = re.sub(r"[^a-z0-9]+", "_", f"{instance or ''}_{type_name}").strip("_").lower()
+        patterns = [
+            ("scoreboard", r"(?:^|_)(?:scoreboard|scbd|sbd)(?:_|$|\d)"),
+            ("sequencer", r"(?:^|_)(?:sequencer|seqr)(?:_|$|\d)"),
+            ("monitor", r"(?:^|_)(?:monitor|mon)(?:_|$|\d)"),
+            ("driver", r"(?:^|_)(?:driver|drv)(?:_|$|\d)"),
+            ("coverage", r"(?:^|_)(?:coverage|cov)(?:_|$|\d)"),
+            ("agent", r"(?:^|_)agent(?:_|$|\d)"),
+            ("env", r"(?:^|_)env(?:_|$|\d)"),
+        ]
+        for role, pattern in patterns:
+            if re.search(pattern, normalized):
+                return role
+        return "component"
+
+    def edge_key(edge: dict[str, Any]) -> str:
+        instance = str(edge.get("instance") or "")
+        return instance if instance else f"@type:{edge.get('type')}"
+
+    def relation_edge(relation: dict[str, Any], source: str, target: str, role: str) -> dict[str, Any]:
+        instance = str(relation.get("instance") or "").strip()
+        edge = {
+            "instance": instance or target,
+            "type": target,
+            "role": role,
+            "relation": relation.get("kind"),
+            "declared_in": source,
+            "file": relation.get("file"),
+            "line": relation.get("line"),
+            "confidence": "high" if relation.get("kind") == "creates" else "medium",
+        }
+        if relation.get("instance_name"):
+            edge["instance_name"] = relation["instance_name"]
+        return edge
+
+    direct_children: dict[str, dict[str, dict[str, Any]]] = {}
+    direct_auxiliaries: dict[str, dict[str, dict[str, Any]]] = {}
+    for relation in relations:
+        if relation.get("kind") not in {"creates", "has_member"}:
+            continue
+        source = class_name(str(relation.get("source") or "").split(".", 1)[0])
+        target = class_name(relation.get("target"))
+        if source not in component_names or target not in classes or source == target:
+            continue
+        instance = str(relation.get("instance") or "").strip()
+        if target in component_names:
+            edge = relation_edge(relation, source, target, inferred_instance_role(target, instance))
+            siblings = direct_children.setdefault(source, {})
+        else:
+            target_role = str(classes[target].get("role") or classify_role(target, base_by_name.get(target)))
+            if target_role != "config":
+                continue
+            edge = relation_edge(relation, source, target, "config")
+            siblings = direct_auxiliaries.setdefault(source, {})
+        key = instance or f"@type:{target}"
+        prior = siblings.get(key)
+        if prior is None or (prior.get("relation") == "has_member" and edge["relation"] == "creates"):
+            siblings[key] = edge
+
+    def effective_edges(
+        name: str,
+        direct: dict[str, dict[str, dict[str, Any]]],
+        cache: dict[str, list[dict[str, Any]]],
+        visiting: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        if name in cache:
+            return [dict(item) for item in cache[name]]
+        visiting = set() if visiting is None else set(visiting)
+        if name in visiting:
+            return []
+        visiting.add(name)
+        merged: dict[str, dict[str, Any]] = {}
+        base = class_name(base_by_name.get(name))
+        if base in component_names:
+            for child in effective_edges(base, direct, cache, visiting):
+                merged[edge_key(child)] = dict(child)
+        for child in direct.get(name, {}).values():
+            merged[edge_key(child)] = dict(child)
+        output = []
+        for child in merged.values():
+            child["inherited"] = child.get("declared_in") != name
+            output.append(child)
+        output.sort(key=lambda item: (role_order.get(str(item.get("role")), 99), str(item.get("instance") or ""), str(item.get("type") or "")))
+        cache[name] = output
+        return [dict(item) for item in output]
+
+    child_cache: dict[str, list[dict[str, Any]]] = {}
+    auxiliary_cache: dict[str, list[dict[str, Any]]] = {}
+
+    def effective_children(name: str) -> list[dict[str, Any]]:
+        return effective_edges(name, direct_children, child_cache)
+
+    def effective_auxiliaries(name: str) -> list[dict[str, Any]]:
+        return effective_edges(name, direct_auxiliaries, auxiliary_cache)
+
+    direct_ports: dict[str, dict[str, dict[str, Any]]] = {}
+    direct_config_accesses: dict[str, list[dict[str, Any]]] = {}
+    direct_connections: dict[str, list[dict[str, Any]]] = {}
+    for relation in relations:
+        kind = str(relation.get("kind") or "")
+        if kind == "declares_tlm_port":
+            owner = class_name(str(relation.get("source") or "").split(".", 1)[0])
+            if owner not in component_names:
+                continue
+            name = str(relation.get("target") or "")
+            direct_ports.setdefault(owner, {})[name] = {
+                "name": name,
+                "port_type": relation.get("port_type"),
+                "family": relation.get("port_family"),
+                "direction": relation.get("direction"),
+                "transaction_types": relation.get("transaction_types", []),
+                "declared_in": owner,
+                "file": relation.get("file"),
+                "line": relation.get("line"),
+            }
+        elif kind in {"config_db_get", "config_db_set"}:
+            owner = class_name(str(relation.get("source") or "").split(".", 1)[0])
+            if owner not in component_names:
+                continue
+            direct_config_accesses.setdefault(owner, []).append(
+                {
+                    "operation": kind.rsplit("_", 1)[-1],
+                    "field": relation.get("target"),
+                    "config_type": relation.get("config_type"),
+                    "scope": relation.get("scope"),
+                    "value": relation.get("value"),
+                    "declared_in": owner,
+                    "file": relation.get("file"),
+                    "line": relation.get("line"),
+                }
+            )
+        elif kind in {"tlm_connect", "seq_item_connect"}:
+            owner = class_name(relation.get("context") or str(relation.get("source") or "").split(".", 1)[0])
+            if owner not in component_names:
+                continue
+            direct_connections.setdefault(owner, []).append(
+                {
+                    "kind": kind,
+                    "lhs": relation.get("lhs") or relation.get("source"),
+                    "rhs": relation.get("rhs") or relation.get("target"),
+                    "declared_in": owner,
+                    "file": relation.get("file"),
+                    "line": relation.get("line"),
+                }
+            )
+
+    port_cache: dict[str, list[dict[str, Any]]] = {}
+    config_access_cache: dict[str, list[dict[str, Any]]] = {}
+    connection_cache: dict[str, list[dict[str, Any]]] = {}
+
+    def effective_ports(name: str, visiting: set[str] | None = None) -> list[dict[str, Any]]:
+        if name in port_cache:
+            return [dict(item) for item in port_cache[name]]
+        visiting = set() if visiting is None else set(visiting)
+        if name in visiting:
+            return []
+        visiting.add(name)
+        merged: dict[str, dict[str, Any]] = {}
+        base = class_name(base_by_name.get(name))
+        if base in component_names:
+            for port in effective_ports(base, visiting):
+                merged[str(port.get("name") or "")] = dict(port)
+        for key, port in direct_ports.get(name, {}).items():
+            merged[key] = dict(port)
+        output = []
+        for port in merged.values():
+            port["inherited"] = port.get("declared_in") != name
+            output.append(port)
+        output.sort(key=lambda item: str(item.get("name") or ""))
+        port_cache[name] = output
+        return [dict(item) for item in output]
+
+    def effective_list(
+        name: str,
+        direct: dict[str, list[dict[str, Any]]],
+        cache: dict[str, list[dict[str, Any]]],
+        key_fields: tuple[str, ...],
+        visiting: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        if name in cache:
+            return [dict(item) for item in cache[name]]
+        visiting = set() if visiting is None else set(visiting)
+        if name in visiting:
+            return []
+        visiting.add(name)
+        merged: dict[tuple[Any, ...], dict[str, Any]] = {}
+        base = class_name(base_by_name.get(name))
+        if base in component_names:
+            for item in effective_list(base, direct, cache, key_fields, visiting):
+                merged[tuple(item.get(field) for field in key_fields)] = dict(item)
+        for item in direct.get(name, []):
+            merged[tuple(item.get(field) for field in key_fields)] = dict(item)
+        output = []
+        for item in merged.values():
+            item["inherited"] = item.get("declared_in") != name
+            output.append(item)
+        cache[name] = output
+        return [dict(item) for item in output]
+
+    def effective_config_accesses(name: str) -> list[dict[str, Any]]:
+        return effective_list(name, direct_config_accesses, config_access_cache, ("operation", "field", "config_type", "file", "line"))
+
+    def effective_connections(name: str) -> list[dict[str, Any]]:
+        return effective_list(name, direct_connections, connection_cache, ("kind", "lhs", "rhs", "file", "line"))
+
+    def match_child(type_name: str, token: str) -> dict[str, Any] | None:
+        token_base = re.sub(r"\[[^\]]*\]", "", token)
+        candidates = effective_children(type_name)
+        for child in candidates:
+            if str(child.get("instance") or "") == token:
+                return child
+        for child in candidates:
+            child_base = re.sub(r"\[[^\]]*\]", "", str(child.get("instance") or ""))
+            if child_base == token_base:
+                return child
+        return None
+
+    def resolve_endpoint(context: str, expression: Any) -> dict[str, Any]:
+        raw = str(expression or "")
+        clean = re.sub(r"\s+", "", raw)
+        parts = [part for part in clean.split(".") if part and part != "this"]
+        path_tokens, port_name = (parts[:-1], parts[-1]) if parts else ([], "")
+        current_type = context
+        instance_path: list[str] = []
+        path_resolved = True
+        owner_role = inferred_instance_role(context, context)
+        unresolved_at = None
+        for token in path_tokens:
+            child = match_child(current_type, token)
+            if not child:
+                path_resolved = False
+                unresolved_at = token
+                break
+            instance_path.append(str(child.get("instance") or token))
+            current_type = str(child.get("type") or current_type)
+            owner_role = str(child.get("role") or inferred_instance_role(current_type, token))
+        port = next((item for item in effective_ports(current_type) if item.get("name") == port_name), None) if path_resolved else None
+        output = {
+            "expression": raw,
+            "requested_path": path_tokens,
+            "instance_path": instance_path,
+            "owner_type": current_type,
+            "owner_role": owner_role,
+            "port": port_name,
+            "path_resolved": path_resolved,
+            "port_declared": bool(port),
+            "confidence": "high" if path_resolved and port else "medium" if path_resolved else "low",
+        }
+        if unresolved_at:
+            output["unresolved_at"] = unresolved_at
+        if port:
+            output.update(
+                {
+                    "port_type": port.get("port_type"),
+                    "family": port.get("family"),
+                    "direction": port.get("direction"),
+                    "transaction_types": port.get("transaction_types", []),
+                }
+            )
+        return output
+
+    def resolved_connection(context: str, item: dict[str, Any]) -> dict[str, Any]:
+        lhs = resolve_endpoint(context, item.get("lhs"))
+        rhs = resolve_endpoint(context, item.get("rhs"))
+        return {
+            **item,
+            "context": context,
+            "source_endpoint": lhs,
+            "target_endpoint": rhs,
+            "resolved": bool(lhs["path_resolved"] and rhs["path_resolved"]),
+            "confidence": "high" if lhs["path_resolved"] and rhs["path_resolved"] else "low",
+        }
+
+    def virtual_interface_type(config_type: Any) -> str | None:
+        value = str(config_type or "").strip()
+        if not value.lower().startswith("virtual "):
+            return None
+        value = value[8:].strip()
+        if value.lower().startswith("interface "):
+            value = value[10:].strip()
+        value = value.split("#", 1)[0].split()[0]
+        return normalize_type(value.split(".", 1)[0])
+
+    def virtual_interfaces(accesses: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        output: list[dict[str, Any]] = []
+        seen: set[tuple[Any, ...]] = set()
+        for access in accesses:
+            interface_type = virtual_interface_type(access.get("config_type"))
+            if not interface_type:
+                continue
+            key = (interface_type, access.get("field"), access.get("operation"), access.get("file"), access.get("line"))
+            if key in seen:
+                continue
+            seen.add(key)
+            output.append(
+                {
+                    "type": interface_type,
+                    "field": access.get("field"),
+                    "operation": access.get("operation"),
+                    "scope": access.get("scope"),
+                    "declared_in": access.get("declared_in"),
+                    "inherited": access.get("inherited", False),
+                    "file": access.get("file"),
+                    "line": access.get("line"),
+                    "confidence": "high",
+                }
+            )
+        return output
+
+    def descendants(name: str, visiting: set[str] | None = None) -> set[str]:
+        visiting = set() if visiting is None else set(visiting)
+        if name in visiting:
+            return set()
+        visiting.add(name)
+        output: set[str] = set()
+        for child in effective_children(name):
+            child_type = str(child.get("type") or "")
+            if not child_type or child_type in visiting:
+                continue
+            output.add(child_type)
+            output.update(descendants(child_type, visiting))
+        return output
+
+    components: dict[str, dict[str, Any]] = {}
+    for name in sorted(component_names):
+        symbol = classes[name]
+        children = effective_children(name)
+        auxiliaries = effective_auxiliaries(name)
+        ports = effective_ports(name)
+        accesses = effective_config_accesses(name)
+        connections = [resolved_connection(name, item) for item in effective_connections(name)]
+        declared_count = sum(1 for child in children if not child.get("inherited"))
+        components[name] = {
+            "type": name,
+            "role": declared_component_role(name),
+            "base": base_by_name.get(name),
+            "file": symbol.get("file"),
+            "line": symbol.get("line"),
+            "classification": component_reason.get(name, "component_relation"),
+            "children": children,
+            "auxiliaries": auxiliaries,
+            "ports": ports,
+            "connections": connections,
+            "config_accesses": accesses,
+            "virtual_interfaces": virtual_interfaces(accesses),
+            "child_count": len(children),
+            "declared_child_count": declared_count,
+            "inherited_child_count": len(children) - declared_count,
+            "auxiliary_count": len(auxiliaries),
+            "descendant_type_count": len(descendants(name)),
+            "port_count": len(ports),
+            "connection_count": len(connections),
+        }
+
+    contained_types = {str(child.get("type")) for item in components.values() for child in item["children"]}
+    candidates = [name for name, item in components.items() if item["child_count"] and item["role"] == "test"]
+    candidates.extend(name for name, item in components.items() if item["child_count"] and item["role"] == "env" and name not in contained_types)
+    candidates.extend(name for name, item in components.items() if item["child_count"] and name not in contained_types)
+    candidates = list(dict.fromkeys(candidates))
+    if not candidates:
+        candidates = [name for name, item in components.items() if item["child_count"]]
+
+    def root_key(name: str) -> tuple[Any, ...]:
+        item = components[name]
+        return (
+            role_order.get(item["role"], 99),
+            0 if "uvm" in name.lower() else 1,
+            0 if item["declared_child_count"] else 1,
+            0 if name.lower().endswith("_base") else 1,
+            -item["descendant_type_count"],
+            name,
+        )
+
+    candidates.sort(key=root_key)
+    roots = [
+        {
+            "type": name,
+            "role": components[name]["role"],
+            "child_count": components[name]["child_count"],
+            "descendant_type_count": components[name]["descendant_type_count"],
+            "file": components[name]["file"],
+            "line": components[name]["line"],
+        }
+        for name in candidates
+    ]
+    architecture_connections = [
+        resolved_connection(name, item)
+        for name in sorted(component_names)
+        for item in direct_connections.get(name, [])
+    ]
+    external_interfaces = sorted(
+        [
+            {"name": item.get("name"), "role": "interface", "file": item.get("file"), "line": item.get("line")}
+            for item in symbols
+            if item.get("kind") == "interface" and item.get("name")
+        ],
+        key=lambda item: (str(item.get("name") or ""), str(item.get("file") or "")),
+    )
+    external_modules = sorted(
+        [
+            {"name": item.get("name"), "role": "module", "file": item.get("file"), "line": item.get("line")}
+            for item in symbols
+            if item.get("kind") == "module" and item.get("name")
+        ],
+        key=lambda item: (str(item.get("name") or ""), str(item.get("file") or "")),
+    )
+    return {
+        "schema_version": ARCHITECTURE_SCHEMA_VERSION,
+        "inference": {
+            "mode": "static_source",
+            "runtime_elaborated": False,
+            "evidence": [
+                "component inheritance",
+                "factory create",
+                "component member declaration",
+                "TLM connect call",
+                "config-db virtual interface access",
+            ],
+            "limitations": [
+                "factory overrides",
+                "conditional build paths",
+                "dynamic instance counts",
+                "runtime config effects",
+                "exact BFM and DUT binding",
+            ],
+        },
+        "default_root": candidates[0] if candidates else None,
+        "roots": roots,
+        "components": components,
+        "connections": architecture_connections,
+        "externals": {"interfaces": external_interfaces, "modules": external_modules},
+    }
+
+
 def build_tlm(symbols: list[dict[str, Any]], relations: list[dict[str, Any]]) -> dict[str, Any]:
     classes = {item["name"]: item for item in symbols if item.get("kind") == "class"}
     ports: list[dict[str, Any]] = []
@@ -615,6 +1213,7 @@ def build_index(
     relation_counts = Counter(relation.get("kind", "unknown") for relation in relations)
     hierarchies = build_hierarchies(symbols, relations)
     tlm = build_tlm(symbols, relations)
+    architecture = build_uvm_architecture(symbols, relations)
     snippets = build_snippets(source_root, symbols + relations, source_context)
     fallback_files = sum(1 for item in files_meta if parser_effective == "pyslang" and item.get("parser") != "pyslang")
     return {
@@ -635,6 +1234,8 @@ def build_index(
             "relations": len(relations),
             "ports": len(tlm["ports"]),
             "connections": len(tlm["connections"]),
+            "components": len(architecture["components"]),
+            "architecture_roots": len(architecture["roots"]),
             "roles": dict(role_counts),
             "relation_kinds": dict(relation_counts),
         },
@@ -642,6 +1243,7 @@ def build_index(
         "symbols": symbols,
         "relations": relations,
         "hierarchies": hierarchies,
+        "uvm_architecture": architecture,
         "tlm": tlm,
         "snippets": snippets,
         "role_colors": ROLE_COLORS,
