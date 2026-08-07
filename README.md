@@ -9,6 +9,8 @@ It generates two canonical artifacts:
 
 The Architecture view uses a UVM Cookbook-style visual grammar: nested test/env containers, expandable agent internals, configuration and checker blocks, resolved TLM connections, and an external virtual-interface boundary. TLM port, export, and implementation endpoints use distinct symbols. When a component is focused, its parent remains as a blurred context layer and connections crossing into the focused component stay visible.
 
+The TLM Connections view renders only connected endpoints as an interactive D3 diagram. It groups ports by `connect_phase` context and owner instance, preserves `context > instance` hierarchy paths, distinguishes port/export/implementation endpoints, and opens the exact connect-call source when a connection is selected.
+
 No separate `tb_arch` description is required. The architecture is projected from static source evidence in the JSON index. Runtime factory overrides, dynamic instances, and exact DUT/BFM binding remain explicitly unresolved unless runtime evidence is added later.
 
 ## Offline Linux Install

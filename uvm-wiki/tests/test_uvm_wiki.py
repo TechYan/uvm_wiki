@@ -158,10 +158,19 @@ class WebTests(unittest.TestCase):
         self.assertIn("arch-container-box", html)
         self.assertIn("fill:#f8fafc", html)
         self.assertIn("archContextGraph", html)
+        self.assertIn(
+            '<g id="archBackNodes"></g><g id="archWires"></g><g id="archNodes"></g><g id="archMarks"></g>',
+            html,
+        )
+        self.assertIn("arch-wire-halo", html)
         self.assertIn("addFocusBoundaryConnections", html)
         self.assertIn("direction-implementation", html)
         self.assertIn("archTlm", html)
         self.assertIn("HDL boundary", html)
+        self.assertIn('id="tlmGraph"', html)
+        self.assertIn('id="tlmContext"', html)
+        self.assertIn("function buildTlmScene", html)
+        self.assertIn("tlm-wire-halo", html)
 
 
 if __name__ == "__main__":
