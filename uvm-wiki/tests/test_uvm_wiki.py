@@ -125,6 +125,9 @@ endclass
         self.assertEqual(connection["source_endpoint"]["instance_path"], ["driver"])
         self.assertEqual(connection["target_endpoint"]["instance_path"], ["sequencer"])
         self.assertTrue(connection["source_endpoint"]["port_declared"])
+        self.assertEqual(connection["source_endpoint"]["direction"], "port")
+        self.assertEqual(connection["target_endpoint"]["direction"], "export")
+        self.assertEqual(len(architecture["connections"]), 1)
         self.assertEqual(architecture["externals"]["interfaces"][0]["name"], "sample_if")
 
 
@@ -153,6 +156,10 @@ class WebTests(unittest.TestCase):
             self.assertIn(label, html)
         self.assertIn("d3.version", html)
         self.assertIn("arch-container-box", html)
+        self.assertIn("fill:#f8fafc", html)
+        self.assertIn("archContextGraph", html)
+        self.assertIn("addFocusBoundaryConnections", html)
+        self.assertIn("direction-implementation", html)
         self.assertIn("archTlm", html)
         self.assertIn("HDL boundary", html)
 

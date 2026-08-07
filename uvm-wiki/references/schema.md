@@ -67,6 +67,6 @@ Important fields:
 - `connections`: directly declared architecture connections across component types.
 - `externals`: indexed HDL interfaces and modules; no DUT binding is inferred without source evidence.
 
-Resolved connection endpoints include `instance_path`, `owner_type`, `owner_role`, `port`, `path_resolved`, `port_declared`, and `confidence`. A path can be resolved even when a built-in UVM port declaration is not present in the indexed repository.
+Resolved connection endpoints include `instance_path`, `owner_type`, `owner_role`, `port`, `port_type`, `family`, `direction`, `path_resolved`, `port_declared`, and `confidence`. `direction` distinguishes UVM port, export, and implementation endpoints. A path can be resolved even when a built-in UVM port declaration is not present in the indexed repository.
 
 The projection is static. Runtime factory overrides, conditional build paths, dynamic instance counts, final config-db effects, and exact BFM/DUT binding require simulation topology, logs, or a future user-provided overlay.

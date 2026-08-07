@@ -7,7 +7,7 @@ It generates two canonical artifacts:
 - `uvm_wiki_ai.json`: structured symbols, relations, hierarchies, TLM ports, connections, locations, and bounded source snippets for AI agents.
 - `uvm_wiki.html`: one interactive application containing Architecture, Wiki Graph, TLM Connections, and Code Explorer views.
 
-The Architecture view uses a UVM Cookbook-style visual grammar: nested test/env containers, expandable agent internals, configuration and checker blocks, resolved TLM connections, and an external virtual-interface boundary. Large environments stay compact until a component is selected and focused.
+The Architecture view uses a UVM Cookbook-style visual grammar: nested test/env containers, expandable agent internals, configuration and checker blocks, resolved TLM connections, and an external virtual-interface boundary. TLM port, export, and implementation endpoints use distinct symbols. When a component is focused, its parent remains as a blurred context layer and connections crossing into the focused component stay visible.
 
 No separate `tb_arch` description is required. The architecture is projected from static source evidence in the JSON index. Runtime factory overrides, dynamic instances, and exact DUT/BFM binding remain explicitly unresolved unless runtime evidence is added later.
 
