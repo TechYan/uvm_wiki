@@ -1,0 +1,6 @@
+.test-output/
+dist/
+uvm_wiki_output/
+.venv/
+__pycache__/
+*.py[cod]
