@@ -44,7 +44,7 @@ python scripts/uvm_wiki.py build --src /path/to/uvm --parser auto --out /path/to
 This writes:
 
 - `uvm_wiki_ai.json`: canonical AI index.
-- `uvm_wiki.html`: unified Architecture, Wiki Graph, Topology, TLM Connections, and Code Explorer application. Architecture uses nested test/env containers, expandable agent internals, routed TLM overlays, virtual-interface boundaries, and layered drill-down transitions. Endpoint clicks locate port declarations, while wire clicks locate connect calls. Wiki Graph includes circular Obsidian-style inheritance and a dense all-relation force view. Topology is a separate multi-root forest. The sidebars and bottom source preview are resizable. Code Explorer provides category-driven definition lists and full-text search in serve mode.
+- `uvm_wiki.html`: unified Architecture, Topology, TLM Connections, Wiki Graph, and Code Explorer application. Architecture uses nested test/env containers, expandable agent internals, routed TLM overlays, virtual-interface boundaries, layered drill-down transitions, and animated selected-wire flow. Endpoint clicks locate port declarations or accessor functions and fall back to the relevant connect call. Wiki Graph includes circular Obsidian-style inheritance, gentle idle motion, drag-neighbor feedback, and a dense all-relation force view. Topology is a separate multi-root forest. The sidebars and bottom source preview are resizable. Code Explorer provides category-driven definition lists and full-text search in serve mode.
 - `.cache/parse_cache.json`: file-level incremental cache.
 
 Build mode embeds bounded source snippets. Adjust or disable them when needed:
@@ -86,5 +86,5 @@ Before handing off an offline bundle:
 2. Build one small VIP in `light` mode.
 3. Build one representative VIP in `pyslang` mode.
 4. Run the same build again and confirm `reparsed_files` is zero.
-5. Open the unified HTML and inspect Architecture, Wiki Graph, Topology, TLM Connections, and Code Explorer.
+5. Open the unified HTML and inspect Architecture, Topology, TLM Connections, Wiki Graph, and Code Explorer.
 6. Start serve mode and confirm full-source lookup works only under the configured source root.

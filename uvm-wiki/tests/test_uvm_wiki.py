@@ -52,6 +52,23 @@ endclass
         self.assertEqual(creates[0]["line"], 9)
         self.assertEqual((connects[0]["context"], connects[0]["line"]), ("sample_env", 13))
 
+    def test_parameterized_function_return_type_is_indexed(self) -> None:
+        source = """\
+class sample_monitor extends uvm_monitor;
+  virtual function uvm_subscriber#(sample_txn) get_sample_sub();
+    return sample_sub;
+  endfunction
+endclass
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "sample_monitor.sv"
+            path.write_text(source, encoding="utf-8")
+            parsed = parse_light(path, root)
+
+        method = next(item for item in parsed["symbols"] if item["name"] == "get_sample_sub")
+        self.assertEqual((method["kind"], method["owner"], method["line"]), ("function", "sample_monitor", 2))
+
     def test_topology_prefers_create_over_matching_member(self) -> None:
         symbols = [
             {"kind": "class", "name": "sample_env", "role": "env"},
@@ -154,6 +171,9 @@ class WebTests(unittest.TestCase):
         html = render_html(json.loads(json.dumps(data)))
         for label in ("Architecture", "Wiki Graph", "Topology", "TLM Connections", "Code Explorer"):
             self.assertIn(label, html)
+        nav_labels = ("Architecture", "Topology", "TLM Connections", "Wiki Graph", "Code Explorer")
+        nav_positions = [html.index(f">{label}</button>") for label in nav_labels]
+        self.assertEqual(nav_positions, sorted(nav_positions))
         self.assertIn("d3.version", html)
         self.assertIn("arch-container-box", html)
         self.assertIn("fill:#f8fafc", html)
@@ -193,7 +213,11 @@ class WebTests(unittest.TestCase):
         self.assertIn("focus-exit", html)
         self.assertIn("commitArchitectureBack", html)
         self.assertIn("resolveArchitecturePort", html)
+        self.assertIn("symbolByOwnerAndName", html)
         self.assertIn("selectArchitecturePort", html)
+        self.assertIn("arch-wire-flow", html)
+        self.assertIn("graphDisplayPosition", html)
+        self.assertIn("drag.neighborNodes", html)
         self.assertIn('id="archComponentList"', html)
         self.assertIn('id="tlmGraph"', html)
         self.assertIn('id="tlmContext"', html)

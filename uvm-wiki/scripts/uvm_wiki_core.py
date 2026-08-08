@@ -15,7 +15,7 @@ from typing import Any, Callable, Iterable
 
 SCHEMA_VERSION = "uvm-wiki-ai.v1"
 ARCHITECTURE_SCHEMA_VERSION = "uvm-architecture.v2"
-CACHE_VERSION = 6
+CACHE_VERSION = 7
 PYSLANG_AST_MAX_BYTES = 512 * 1024
 SOURCE_EXTS = {".sv", ".svh", ".v", ".vh"}
 SKIP_DIRS = {".git", ".svn", "__pycache__", ".uvm_wiki", "node_modules"}
@@ -68,7 +68,7 @@ FIELD_RE = re.compile(
 )
 METHOD_RE = re.compile(
     r"^\s*(?:extern\s+)?(?:virtual\s+)?(?P<kind>function|task)\s+(?:automatic\s+)?"
-    r"(?:(?:[A-Za-z_][\w:<>#\[\]\s]*)\s+)?(?:(?P<class>[A-Za-z_]\w*)::)?(?P<name>[A-Za-z_]\w*)\s*\("
+    r"(?:(?:[A-Za-z_][\w:<>#()\[\],\s]*)\s+)?(?:(?P<class>[A-Za-z_]\w*)::)?(?P<name>[A-Za-z_]\w*)\s*\("
 )
 
 
