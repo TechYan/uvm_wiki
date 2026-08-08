@@ -1,6 +1,6 @@
 ---
 name: uvm-wiki
-description: Build and query an offline AI-friendly code index and unified interactive wiki for SystemVerilog/UVM repositories. Use when Codex needs to analyze a VIP/UVC/testbench source directory, explain UVM component topology or inheritance, inspect TLM ports and connect calls, create uvm_wiki_ai.json, launch a read-only full-source browser, or reuse an incremental code index instead of repeatedly grepping a large verification repository.
+description: Build and query an offline AI-friendly code index and unified interactive wiki for SystemVerilog/UVM repositories. Use when Codex needs to analyze a VIP/UVC/testbench source directory or simulator filelist, explain UVM component topology or inheritance, inspect TLM ports and connect calls, create uvm_wiki_ai.json, launch a read-only full-source browser, or reuse an incremental code index instead of repeatedly grepping a large verification repository.
 ---
 
 # UVM Wiki
@@ -35,11 +35,19 @@ Then run the tool with:
 
 ## Build A Portable Wiki
 
-Use build mode when the result must open without a local service:
+Use directory mode when all HDL files below one root should be indexed:
 
 ```bash
 python scripts/uvm_wiki.py build --src /path/to/uvm --parser auto --out /path/to/output
 ```
+
+Use filelist mode when the index should follow the project compilation manifest:
+
+```bash
+python scripts/uvm_wiki.py build --src /path/to/project --filelist /path/to/project/files.f --parser auto --out /path/to/output
+```
+
+Prefer an explicit `--src` with filelists. It defines the source navigation boundary while `--filelist` defines the indexed file set. Filelist mode supports nested `-f`/`-F`, include directories, defines, explicit library files, environment variables, and project-local include closure. Treat the result as static per-file syntax evidence, not simulator elaboration.
 
 This writes:
 
@@ -59,7 +67,7 @@ python scripts/uvm_wiki.py build --src /path/to/uvm --no-source
 Use serve mode for complete source files and full-text search:
 
 ```bash
-python scripts/uvm_wiki.py serve --src /path/to/uvm --parser auto --out /path/to/output --port 8765
+python scripts/uvm_wiki.py serve --src /path/to/uvm --filelist /path/to/uvm/files.f --parser auto --out /path/to/output --port 8765
 ```
 
 Open `http://127.0.0.1:8765`. The service is read-only, binds to loopback, rejects traversal outside `--src`, and serves only SystemVerilog source extensions.
@@ -84,7 +92,7 @@ Before handing off an offline bundle:
 
 1. Run `doctor` with the intended Python interpreter.
 2. Build one small VIP in `light` mode.
-3. Build one representative VIP in `pyslang` mode.
+3. Build the sanitized example through its filelist in `pyslang` mode.
 4. Run the same build again and confirm `reparsed_files` is zero.
 5. Open the unified HTML and inspect Architecture, Topology, Class Hierarchy, TLM Connections, Phase Map, Wiki Graph, and Code Explorer.
 6. Start serve mode and confirm full-source lookup works only under the configured source root.

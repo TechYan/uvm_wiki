@@ -5,7 +5,7 @@
 ## Top-Level Fields
 
 - `schema_version`: stable schema identifier.
-- `metadata`: source root, source fingerprint, requested/effective parser, generation time, and cache statistics.
+- `metadata`: source root, source fingerprint, requested/effective parser, input mode, generation time, and cache statistics.
 - `stats`: counts for files, classes, symbols, relations, ports, and connections.
 - `files`: source file paths, hashes, parser, and pyslang diagnostic counts.
 - `symbols`: class, module, interface, package, function, and task declarations.
@@ -68,5 +68,9 @@ Important fields:
 - `externals`: indexed HDL interfaces and modules; no DUT binding is inferred without source evidence.
 
 Resolved connection endpoints include `instance_path`, `owner_type`, `owner_role`, `port`, `port_type`, `family`, `direction`, `path_resolved`, `port_declared`, and `confidence`. `direction` distinguishes UVM port, export, and implementation endpoints. A path can be resolved even when a built-in UVM port declaration is not present in the indexed repository.
+
+## Input Metadata
+
+`metadata.input.mode` is `directory` or `filelist`. Filelist mode also records top-level and nested filelists, listed and include-discovered file counts, include directories, defines, ignored simulator options, and resolution warnings. These fields describe static index selection; they do not claim simulator elaboration or compile success.
 
 The projection is static. Runtime factory overrides, conditional build paths, dynamic instance counts, final config-db effects, and exact BFM/DUT binding require simulation topology, logs, or a future user-provided overlay.

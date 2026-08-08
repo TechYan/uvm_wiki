@@ -10,7 +10,8 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from uvm_wiki_core import build_hierarchies, build_uvm_architecture, classify_role, parse_light  # noqa: E402
+from uvm_wiki_core import build_hierarchies, build_index, build_uvm_architecture, classify_role, parse_light  # noqa: E402
+from uvm_wiki_filelist import derive_source_root, expand_project_includes, parse_filelists  # noqa: E402
 from uvm_wiki_web import render_html, source_payload  # noqa: E402
 
 
@@ -146,6 +147,72 @@ endclass
         self.assertEqual(connection["target_endpoint"]["direction"], "export")
         self.assertEqual(len(architecture["connections"]), 1)
         self.assertEqual(architecture["externals"]["interfaces"][0]["name"], "sample_if")
+
+
+class FilelistTests(unittest.TestCase):
+    def test_gb18030_filelist_supports_non_ascii_source_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_name = "\u793a\u4f8b.sv"
+            (root / source_name).write_text("module sample; endmodule\n", encoding="utf-8")
+            filelist = root / "files.f"
+            filelist.write_bytes((f"# \u4e2d\u6587\u6ce8\u91ca\n./{source_name}\n").encode("gb18030"))
+
+            spec = parse_filelists([filelist])
+
+            self.assertEqual(spec.sources, [(root / source_name).resolve()])
+
+    def test_nested_filelist_selects_sources_and_expands_project_includes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lists").mkdir()
+            (root / "src").mkdir()
+            (root / "include").mkdir()
+            (root / "src" / "child.sv").write_text(
+                "class sample_child extends uvm_component; endclass\n",
+                encoding="utf-8",
+            )
+            (root / "src" / "top.sv").write_text(
+                '`include "sample_header.svh"\nmodule sample_top; endmodule\n',
+                encoding="utf-8",
+            )
+            (root / "src" / "not_listed.sv").write_text("module not_listed; endmodule\n", encoding="utf-8")
+            (root / "include" / "sample_header.svh").write_text(
+                "class sample_header extends uvm_object; endclass\n",
+                encoding="utf-8",
+            )
+            (root / "lists" / "nested.f").write_text("../src/child.sv\n", encoding="utf-8")
+            top_filelist = root / "files.f"
+            top_filelist.write_text(
+                "+incdir+./include\n+define+WIDTH=8\n-f ./lists/nested.f\n./src/top.sv\n-sverilog\n",
+                encoding="utf-8",
+            )
+
+            spec = parse_filelists([top_filelist])
+            source_root = derive_source_root(spec, [top_filelist])
+            expand_project_includes(spec, source_root)
+            relative_sources = [path.relative_to(source_root).as_posix() for path in spec.sources]
+
+            self.assertEqual(source_root, root.resolve())
+            self.assertEqual(relative_sources, ["src/child.sv", "src/top.sv", "include/sample_header.svh"])
+            self.assertEqual(spec.defines, ["WIDTH=8"])
+            self.assertEqual(spec.ignored_options, ["-sverilog"])
+
+            metadata = spec.metadata(source_root)
+            data = build_index(
+                source_root=source_root,
+                parser_requested="light",
+                cache_path=root / "output" / "parse_cache.json",
+                source_context=0,
+                source_paths=spec.sources,
+                include_dirs=spec.include_dirs,
+                defines=spec.defines,
+                input_metadata=metadata,
+            )
+            self.assertEqual(data["stats"]["files"], 3)
+            self.assertEqual(data["metadata"]["input"]["listed_files"], 2)
+            self.assertEqual(data["metadata"]["input"]["included_files"], 1)
+            self.assertNotIn("src/not_listed.sv", [item["path"] for item in data["files"]])
 
 
 class WebTests(unittest.TestCase):

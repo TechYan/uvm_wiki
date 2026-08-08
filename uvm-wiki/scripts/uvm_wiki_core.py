@@ -15,7 +15,7 @@ from typing import Any, Callable, Iterable
 
 SCHEMA_VERSION = "uvm-wiki-ai.v1"
 ARCHITECTURE_SCHEMA_VERSION = "uvm-architecture.v2"
-CACHE_VERSION = 7
+CACHE_VERSION = 8
 PYSLANG_AST_MAX_BYTES = 512 * 1024
 SOURCE_EXTS = {".sv", ".svh", ".v", ".vh"}
 SKIP_DIRS = {".git", ".svn", "__pycache__", ".uvm_wiki", "node_modules"}
@@ -390,46 +390,72 @@ def parse_light(path: Path, root: Path) -> dict[str, Any]:
     return {"symbols": symbols, "relations": relations, "fields": fields, "parser": "light", "diagnostics": 0}
 
 
-def _syntax_name(node: dict[str, Any]) -> str | None:
-    value = node.get("name")
-    if isinstance(value, dict):
-        text = value.get("text")
-        return text if isinstance(text, str) else None
-    return value if isinstance(value, str) else None
+def _syntax_declarations(tree: Any, path: Path, syntax: Any) -> list[tuple[str, str, int]]:
+    """Return declarations physically defined in path, excluding included files."""
+
+    output: list[tuple[str, str, int]] = []
+    expected = os.path.normcase(str(path.resolve()))
+    mapping = {
+        "ClassDeclaration": "class",
+        "ModuleDeclaration": "module",
+        "InterfaceDeclaration": "interface",
+        "ProgramDeclaration": "program",
+        "PackageDeclaration": "package",
+        "FunctionDeclaration": "function",
+        "TaskDeclaration": "task",
+    }
+
+    def handler(kind: str) -> Callable[[Any], None]:
+        def visit(node: Any) -> None:
+            token = getattr(node, "name", None)
+            name = getattr(token, "valueText", None)
+            if not name:
+                return
+            location = node.sourceRange.start
+            filename = Path(str(tree.sourceManager.getFileName(location)))
+            if not filename.is_absolute():
+                filename = (Path.cwd() / filename).resolve()
+            if os.path.normcase(str(filename.resolve())) != expected:
+                return
+            output.append((kind, str(name), int(tree.sourceManager.getLineNumber(location))))
+
+        return visit
+
+    lookup = {
+        syntax_kind: handler(kind)
+        for syntax_name, kind in mapping.items()
+        if (syntax_kind := getattr(syntax.SyntaxKind, syntax_name, None)) is not None
+    }
+    tree.root.visit(lookup_table=lookup)
+    return output
 
 
-def _walk_syntax(value: Any, output: list[tuple[str, str]]) -> None:
-    if isinstance(value, dict):
-        kind = value.get("kind")
-        name = _syntax_name(value)
-        mapping = {
-            "ClassDeclaration": "class",
-            "ModuleDeclaration": "module",
-            "InterfaceDeclaration": "interface",
-            "ProgramDeclaration": "program",
-            "PackageDeclaration": "package",
-            "FunctionDeclaration": "function",
-            "TaskDeclaration": "task",
-        }
-        if isinstance(kind, str) and kind in mapping and name:
-            output.append((mapping[kind], name))
-        for child in value.values():
-            _walk_syntax(child, output)
-    elif isinstance(value, list):
-        for child in value:
-            _walk_syntax(child, output)
-
-
-def parse_with_pyslang(path: Path, root: Path, syntax: Any) -> dict[str, Any]:
+def parse_with_pyslang(
+    path: Path,
+    root: Path,
+    syntax: Any,
+    include_dirs: Iterable[Path] = (),
+    defines: Iterable[str] = (),
+) -> dict[str, Any]:
     result = parse_light(path, root)
-    tree = syntax.SyntaxTree.fromFile(str(path))
-    declarations: list[tuple[str, str]] = []
-    _walk_syntax(json.loads(tree.to_json()), declarations)
+    include_paths = [str(item) for item in include_dirs]
+    predefined = list(defines)
+    if include_paths or predefined:
+        import pyslang  # type: ignore
+        from pyslang import parsing  # type: ignore
+
+        preprocessor = parsing.PreprocessorOptions()
+        preprocessor.additionalIncludePaths = include_paths
+        preprocessor.predefines = predefined
+        tree = syntax.SyntaxTree.fromFile(str(path), pyslang.SourceManager(), pyslang.Bag([preprocessor]))
+    else:
+        tree = syntax.SyntaxTree.fromFile(str(path))
+    declarations = _syntax_declarations(tree, path, syntax)
     existing = {(item["kind"], item["name"]) for item in result["symbols"]}
     relative = path.relative_to(root).as_posix()
-    for kind, name in declarations:
+    for kind, name, line in declarations:
         if (kind, name) not in existing:
-            result["symbols"].append({"id": name, "kind": kind, "name": name, "role": classify_role(name) if kind == "class" else kind, "file": relative, "line": 1, "pyslang_only": True})
+            result["symbols"].append({"id": name, "kind": kind, "name": name, "role": classify_role(name) if kind == "class" else kind, "file": relative, "line": line, "pyslang_only": True})
     result["parser"] = "pyslang"
     result["diagnostics"] = len(tree.diagnostics)
     return result
@@ -478,9 +504,14 @@ def load_cache(path: Path) -> dict[str, Any]:
         return {}
 
 
-def save_cache(path: Path, parser: str, entries: dict[str, Any]) -> None:
+def save_cache(path: Path, parser: str, entries: dict[str, Any], context_fingerprint: str = "") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"cache_version": CACHE_VERSION, "parser": parser, "entries": entries}
+    payload = {
+        "cache_version": CACHE_VERSION,
+        "parser": parser,
+        "context_fingerprint": context_fingerprint,
+        "entries": entries,
+    }
     path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 
@@ -1149,19 +1180,49 @@ def build_index(
     source_context: int = 15,
     rebuild: bool = False,
     progress: Callable[[int, int, str], None] | None = None,
+    source_paths: Iterable[Path] | None = None,
+    include_dirs: Iterable[Path] = (),
+    defines: Iterable[str] = (),
+    input_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     source_root = source_root.resolve()
     parser_effective, syntax = resolve_parser(parser_requested)
+    include_paths = [path.resolve() for path in include_dirs]
+    predefined = list(defines)
+    context_payload = json.dumps(
+        {"include_dirs": [str(path) for path in include_paths], "defines": predefined},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    context_fingerprint = hashlib.sha256(context_payload.encode()).hexdigest()
     previous = {} if rebuild else load_cache(cache_path)
-    previous_entries = previous.get("entries", {}) if previous.get("parser") == parser_effective else {}
+    previous_entries = (
+        previous.get("entries", {})
+        if previous.get("parser") == parser_effective
+        and previous.get("context_fingerprint", "") == context_fingerprint
+        else {}
+    )
     entries: dict[str, Any] = {}
     files_meta: list[dict[str, Any]] = []
     reparsed = 0
     reused = 0
 
-    source_paths = list(iter_sources(source_root))
-    total_files = len(source_paths)
-    for file_number, path in enumerate(source_paths, 1):
+    requested_paths = list(source_paths) if source_paths is not None else list(iter_sources(source_root))
+    selected_paths: list[Path] = []
+    seen_paths: set[Path] = set()
+    for requested_path in requested_paths:
+        path = requested_path.resolve()
+        try:
+            path.relative_to(source_root)
+        except ValueError as exc:
+            raise RuntimeError(f"source file is outside the configured source root: {path}") from exc
+        if path.suffix.lower() not in SOURCE_EXTS or not path.is_file() or path in seen_paths:
+            continue
+        seen_paths.add(path)
+        selected_paths.append(path)
+
+    total_files = len(selected_paths)
+    for file_number, path in enumerate(selected_paths, 1):
         relative = path.relative_to(source_root).as_posix()
         signature = file_signature(path)
         cached = previous_entries.get(relative)
@@ -1175,7 +1236,11 @@ def build_index(
                     parsed["parser"] = "light-large-file"
                     parsed["parser_note"] = f"pyslang AST JSON skipped above {PYSLANG_AST_MAX_BYTES} bytes"
                 else:
-                    parsed = parse_with_pyslang(path, source_root, syntax) if parser_effective == "pyslang" else parse_light(path, source_root)
+                    parsed = (
+                        parse_with_pyslang(path, source_root, syntax, include_paths, predefined)
+                        if parser_effective == "pyslang"
+                        else parse_light(path, source_root)
+                    )
             except Exception as exc:
                 parsed = parse_light(path, source_root)
                 parsed["parser"] = "light-fallback"
@@ -1191,9 +1256,9 @@ def build_index(
         if progress and (file_number == 1 or file_number % 25 == 0 or file_number == total_files):
             progress(file_number, total_files, relative)
         if file_number % 25 == 0:
-            save_cache(cache_path, parser_effective, entries)
+            save_cache(cache_path, parser_effective, entries, context_fingerprint)
 
-    save_cache(cache_path, parser_effective, entries)
+    save_cache(cache_path, parser_effective, entries, context_fingerprint)
     symbols = [symbol for entry in entries.values() for symbol in entry["parsed"].get("symbols", [])]
     relations = [relation for entry in entries.values() for relation in entry["parsed"].get("relations", [])]
     fields = [field for entry in entries.values() for field in entry["parsed"].get("fields", [])]
@@ -1224,7 +1289,9 @@ def build_index(
             "source_fingerprint": fingerprint.hexdigest(),
             "parser_requested": parser_requested,
             "parser_effective": parser_effective,
+            "parser_strategy": "per_file_syntax",
             "parser_fallback_files": fallback_files,
+            "input": input_metadata or {"mode": "directory"},
             "cache": {"reused_files": reused, "reparsed_files": reparsed, "cache_path": str(cache_path)},
         },
         "stats": {

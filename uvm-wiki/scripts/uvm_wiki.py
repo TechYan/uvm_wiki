@@ -9,29 +9,66 @@ import sys
 from pathlib import Path
 
 from uvm_wiki_core import build_index, resolve_parser
+from uvm_wiki_filelist import (
+    derive_source_root,
+    expand_project_includes,
+    parse_filelists,
+    require_sources_within_root,
+)
 from uvm_wiki_web import serve_html, write_html
 
 
-def output_directory(source: Path, value: str | None) -> Path:
+def output_directory(source: Path, value: str | None, default_name: str | None = None) -> Path:
     if value:
         return Path(value).expanduser().resolve()
-    return (Path.cwd() / "uvm_wiki_output" / source.name).resolve()
+    return (Path.cwd() / "uvm_wiki_output" / (default_name or source.name)).resolve()
 
 
 def add_build_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--src", required=True, help="SystemVerilog/UVM source directory")
-    parser.add_argument("--out", help="output directory; defaults to ./uvm_wiki_output/<source-name>")
+    parser.add_argument("--src", help="source root; scans recursively unless --filelist is provided")
+    parser.add_argument(
+        "--filelist",
+        action="append",
+        help="simulator-style filelist; repeat for multiple top-level filelists",
+    )
+    parser.add_argument("--out", help="output directory; defaults to ./uvm_wiki_output/<source-or-filelist-name>")
     parser.add_argument("--parser", choices=("auto", "pyslang", "light"), default="auto", help="parser mode; default: auto")
     parser.add_argument("--source-context", type=int, default=15, help="embedded source lines before and after indexed locations")
     parser.add_argument("--no-source", action="store_true", help="do not embed source snippets in the standalone HTML")
     parser.add_argument("--rebuild", action="store_true", help="ignore incremental parse cache")
 
 
-def build_project(args: argparse.Namespace) -> tuple[dict, Path, Path]:
+def project_input(
+    args: argparse.Namespace,
+) -> tuple[Path, list[Path] | None, list[Path], list[str], dict, str | None]:
+    requested_filelists = [Path(value).expanduser().resolve() for value in (args.filelist or [])]
+    if not args.src and not requested_filelists:
+        raise SystemExit("provide --src for directory scan mode or --filelist for filelist mode")
+    if requested_filelists:
+        spec = parse_filelists(requested_filelists)
+        source = Path(args.src).expanduser().resolve() if args.src else derive_source_root(spec, requested_filelists)
+        if not source.is_dir():
+            raise SystemExit(f"source directory does not exist: {source}")
+        require_sources_within_root(spec, source)
+        expand_project_includes(spec, source)
+        return (
+            source,
+            spec.sources,
+            spec.include_dirs,
+            spec.defines,
+            spec.metadata(source),
+            requested_filelists[0].stem,
+        )
+
     source = Path(args.src).expanduser().resolve()
     if not source.is_dir():
         raise SystemExit(f"source directory does not exist: {source}")
-    output = output_directory(source, args.out)
+    return source, None, [], [], {"mode": "directory"}, None
+
+
+def build_project(args: argparse.Namespace) -> tuple[dict, Path, Path]:
+    source, source_paths, include_dirs, defines, input_metadata, default_name = project_input(args)
+    output = output_directory(source, args.out, default_name)
     output.mkdir(parents=True, exist_ok=True)
     cache_path = output / ".cache" / "parse_cache.json"
     data = build_index(
@@ -41,6 +78,10 @@ def build_project(args: argparse.Namespace) -> tuple[dict, Path, Path]:
         source_context=0 if args.no_source else max(0, args.source_context),
         rebuild=args.rebuild,
         progress=lambda done, total, path: print(f"Indexing {done}/{total}: {path}", flush=True),
+        source_paths=source_paths,
+        include_dirs=include_dirs,
+        defines=defines,
+        input_metadata=input_metadata,
     )
     json_path = output / "uvm_wiki_ai.json"
     html_path = output / "uvm_wiki.html"
@@ -73,6 +114,7 @@ def command_serve(args: argparse.Namespace) -> int:
 
 def command_doctor(_: argparse.Namespace) -> int:
     print(f"Python: {sys.version.split()[0]}")
+    print("Input modes: directory, filelist")
     for requested in ("light", "auto"):
         effective, _syntax = resolve_parser(requested)
         print(f"Parser {requested}: {effective}")

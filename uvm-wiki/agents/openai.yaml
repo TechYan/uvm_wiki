@@ -1,4 +1,4 @@
 interface:
   display_name: "UVM Wiki"
   short_description: "Build an offline UVM code map for AI and engineers"
-  default_prompt: "Analyze this SystemVerilog/UVM source directory and generate the UVM Wiki outputs."
+  default_prompt: "Analyze this SystemVerilog/UVM source directory or filelist and generate the UVM Wiki outputs."

@@ -1,6 +1,6 @@
 # UVM Wiki
 
-UVM Wiki is an offline Codex skill for indexing SystemVerilog/UVM source once and reusing the result for both AI-assisted reading and human exploration.
+UVM Wiki is an offline Codex skill for indexing SystemVerilog/UVM source once and reusing the result for both AI-assisted reading and human exploration. It can scan a source directory or follow simulator-style filelists.
 
 It generates two canonical artifacts:
 
@@ -34,6 +34,8 @@ The wheel checksum is verified before installation. The default environment is `
 
 ## Build
 
+Directory scan mode recursively indexes supported HDL files under `--src`:
+
 ```bash
 ~/.local/share/uvm-wiki/venv/bin/python \
   ~/.codex/skills/uvm-wiki/scripts/uvm_wiki.py build \
@@ -41,6 +43,19 @@ The wheel checksum is verified before installation. The default environment is `
   --parser auto \
   --out /path/to/output
 ```
+
+Filelist mode indexes listed compilation units plus project-local include files:
+
+```bash
+~/.local/share/uvm-wiki/venv/bin/python \
+  ~/.codex/skills/uvm-wiki/scripts/uvm_wiki.py build \
+  --src /path/to/project \
+  --filelist /path/to/project/sim/filelist.f \
+  --parser auto \
+  --out /path/to/output
+```
+
+`--src` is optional with `--filelist`, but specifying it is recommended because it defines relative source paths and the full-source browsing boundary. Repeat `--filelist` for multiple top-level manifests. Nested `-f`/`-F`, `+incdir+`, `-I`, `+define+`, `-D`, explicit `-v` files, environment variables, comments, and line continuations are supported. This is static per-file parsing, not simulator elaboration.
 
 Parser modes:
 
@@ -74,6 +89,8 @@ Use UVM Wiki to index /project/vip and explain the component topology and TLM co
 ```
 
 See [uvm-wiki/SKILL.md](uvm-wiki/SKILL.md) for the agent workflow and [uvm-wiki/references/schema.md](uvm-wiki/references/schema.md) for the JSON contract.
+
+The repository includes a sanitized complete example under [examples/demo_uvm](examples/demo_uvm). See [docs/INTRANET_GUIDE.md](docs/INTRANET_GUIDE.md) for offline deployment and operation, and [docs/INTRODUCTION.md](docs/INTRODUCTION.md) for a concise presentation document with image placeholders.
 
 ## Legacy Tool
 
