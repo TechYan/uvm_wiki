@@ -152,7 +152,7 @@ class WebTests(unittest.TestCase):
             "snippets": {},
         }
         html = render_html(json.loads(json.dumps(data)))
-        for label in ("Architecture", "Wiki Graph", "TLM Connections", "Code Explorer"):
+        for label in ("Architecture", "Wiki Graph", "Topology", "TLM Connections", "Code Explorer"):
             self.assertIn(label, html)
         self.assertIn("d3.version", html)
         self.assertIn("arch-container-box", html)
@@ -171,8 +171,12 @@ class WebTests(unittest.TestCase):
         self.assertIn("HDL boundary", html)
         self.assertIn('id="leftSplitter"', html)
         self.assertIn('id="rightSplitter"', html)
+        self.assertIn("function bindSplitters", html)
+        self.assertIn('id="sourceSplitter"', html)
+        self.assertIn('id="sourceDock"', html)
         self.assertIn("--left-width", html)
         self.assertIn('id="topologyGraph"', html)
+        self.assertIn('id="topologyView"', html)
         self.assertIn("function topologyForest", html)
         self.assertIn("node.pinned=true", html)
         self.assertIn("function resetTopologyView", html)
@@ -180,10 +184,15 @@ class WebTests(unittest.TestCase):
         self.assertIn("arch-enter-action", html)
         self.assertIn("focus-exit", html)
         self.assertIn("commitArchitectureBack", html)
+        self.assertIn("resolveArchitecturePort", html)
+        self.assertIn("selectArchitecturePort", html)
+        self.assertIn('id="archComponentList"', html)
         self.assertIn('id="tlmGraph"', html)
         self.assertIn('id="tlmContext"', html)
         self.assertIn("function buildTlmScene", html)
         self.assertIn("tlm-wire-halo", html)
+        self.assertIn('id="codeCategory"', html)
+        self.assertIn("UVM_COMPONENT_ROLES", html)
 
 
 if __name__ == "__main__":

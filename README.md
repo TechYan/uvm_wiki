@@ -5,13 +5,15 @@ UVM Wiki is an offline Codex skill for indexing SystemVerilog/UVM source once an
 It generates two canonical artifacts:
 
 - `uvm_wiki_ai.json`: structured symbols, relations, hierarchies, TLM ports, connections, locations, and bounded source snippets for AI agents.
-- `uvm_wiki.html`: one interactive application containing Architecture, Wiki Graph, TLM Connections, and Code Explorer views.
+- `uvm_wiki.html`: one interactive application containing Architecture, Wiki Graph, Topology, TLM Connections, and Code Explorer views.
 
-The Architecture view uses a UVM Cookbook-style visual grammar: nested test/env containers, expandable agent internals, configuration and checker blocks, resolved TLM connections, and an external virtual-interface boundary. TLM port, export, and implementation endpoints use distinct symbols and geometry-aware routing channels. A single click selects a component; double-clicking or using its enter control opens the component. Focus transitions retain the parent as a blurred context layer and preserve connections crossing into the focused component.
+The Architecture view uses a UVM Cookbook-style visual grammar: nested test/env containers, expandable agent internals, configuration and checker blocks, resolved TLM connections, and an external virtual-interface boundary. TLM port, export, and implementation endpoints use distinct symbols and horizontally terminated routing channels. Clicking an endpoint opens its declaration when the index has a local location; clicking a wire opens the corresponding connect call. A component list mirrors the current layer. A single click selects a component; double-clicking or using its enter control opens the component. Focus transitions retain the parent as a blurred context layer and preserve connections crossing into the focused component.
 
-Wiki Graph provides three complementary projections. Inheritance and All Relations use an Obsidian-style force graph with curved links, depth cues, bounded persistent node dragging, and animated reset. Topology uses a multi-root tidy forest with curved branches and draggable rectangular nodes. The left and right sidebars can be resized with a pointer or keyboard and restored by double-clicking their dividers.
+Wiki Graph provides two complementary projections. Inheritance uses a centered circular Obsidian-style force graph with straight links; All Relations retains curved links and depth cues for dense data. Topology is a separate top-level view using a multi-root tidy forest with curved branches and draggable rectangular nodes. The left and right sidebars and the bottom source preview can be resized with a pointer or keyboard and restored by double-clicking their dividers.
 
 The TLM Connections view renders only connected endpoints as an interactive D3 diagram. It groups ports by `connect_phase` context and owner instance, preserves `context > instance` hierarchy paths, distinguishes port/export/implementation endpoints, and opens the exact connect-call source when a connection is selected.
+
+Code Explorer hides the graph sidebars and provides category-driven definition lists for UVM components, interfaces, sequences, sequence items, classes, modules, packages, functions, tasks, and source files. Serve mode also exposes full-text source search.
 
 No separate `tb_arch` description is required. The architecture is projected from static source evidence in the JSON index. Runtime factory overrides, dynamic instances, and exact DUT/BFM binding remain explicitly unresolved unless runtime evidence is added later.
 
