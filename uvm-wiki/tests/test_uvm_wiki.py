@@ -169,9 +169,25 @@ class WebTests(unittest.TestCase):
             "snippets": {},
         }
         html = render_html(json.loads(json.dumps(data)))
-        for label in ("Architecture", "Wiki Graph", "Topology", "TLM Connections", "Code Explorer"):
+        for label in (
+            "Architecture",
+            "Topology",
+            "Class Hierarchy",
+            "TLM Connections",
+            "Phase Map",
+            "Wiki Graph",
+            "Code Explorer",
+        ):
             self.assertIn(label, html)
-        nav_labels = ("Architecture", "Topology", "TLM Connections", "Wiki Graph", "Code Explorer")
+        nav_labels = (
+            "Architecture",
+            "Topology",
+            "Class Hierarchy",
+            "TLM Connections",
+            "Phase Map",
+            "Wiki Graph",
+            "Code Explorer",
+        )
         nav_positions = [html.index(f">{label}</button>") for label in nav_labels]
         self.assertEqual(nav_positions, sorted(nav_positions))
         self.assertIn("d3.version", html)
@@ -199,8 +215,23 @@ class WebTests(unittest.TestCase):
         self.assertIn('id="topologyGraph"', html)
         self.assertIn('id="topologyView"', html)
         self.assertIn("function topologyForest", html)
+        self.assertIn("function selectTopologyNode", html)
+        self.assertIn('data-topology-location="instance"', html)
+        self.assertIn('data-topology-location="definition"', html)
         self.assertIn("node.pinned=true", html)
         self.assertIn("function resetTopologyView", html)
+        self.assertIn('id="hierarchyView"', html)
+        self.assertIn('id="hierarchyGraph"', html)
+        self.assertIn("function classHierarchyModel", html)
+        self.assertIn("function toggleClassHierarchyNode", html)
+        self.assertIn("function fitClassHierarchy", html)
+        self.assertIn('["uvm_sequencer","uvm_sequencer_param_base"]', html)
+        self.assertIn('["uvm_sequence","uvm_sequence_base"]', html)
+        self.assertIn('id="phaseView"', html)
+        self.assertIn('id="phaseStage"', html)
+        self.assertIn("function phaseImplementation", html)
+        self.assertIn("function renderPhaseMap", html)
+        self.assertIn("function selectPhaseMethod", html)
         self.assertIn('.on("dblclick"', html)
         self.assertIn("arch-expand-action", html)
         self.assertNotIn("arch-enter-action", html)

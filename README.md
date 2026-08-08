@@ -5,11 +5,13 @@ UVM Wiki is an offline Codex skill for indexing SystemVerilog/UVM source once an
 It generates two canonical artifacts:
 
 - `uvm_wiki_ai.json`: structured symbols, relations, hierarchies, TLM ports, connections, locations, and bounded source snippets for AI agents.
-- `uvm_wiki.html`: one interactive application containing Architecture, Wiki Graph, Topology, TLM Connections, and Code Explorer views.
+- `uvm_wiki.html`: one interactive application containing Architecture, Topology, Class Hierarchy, TLM Connections, Phase Map, Wiki Graph, and Code Explorer views.
 
 The Architecture view uses a UVM Cookbook-style visual grammar: nested test/env containers, expandable agent internals, configuration and checker blocks, resolved TLM connections, and an external virtual-interface boundary. TLM port, export, and implementation endpoints use distinct symbols and horizontally terminated routing channels. Clicking an endpoint opens its declaration when the index has a local location; clicking a wire opens the corresponding connect call. A component list mirrors the current layer. A single click selects a component; double-clicking or using its enter control opens the component. Focus transitions retain the parent as a blurred context layer and preserve connections crossing into the focused component.
 
-Wiki Graph provides two complementary projections. Inheritance uses a centered circular Obsidian-style force graph with straight links; All Relations retains curved links and depth cues for dense data. Topology is a separate top-level view using a multi-root tidy forest with curved branches and draggable rectangular nodes. The left and right sidebars and the bottom source preview can be resized with a pointer or keyboard and restored by double-clicking their dividers.
+Wiki Graph provides two complementary projections. Inheritance uses a centered circular Obsidian-style force graph with straight links; All Relations retains curved links and depth cues for dense data. Topology is a separate top-level view using a multi-root tidy forest with draggable instance-labeled nodes. Selecting a topology node opens its factory-create or member-declaration evidence by default, while the selection panel provides a second direct entry to the class definition.
+
+Class Hierarchy presents a collapsible left-to-right inheritance tree. It groups known UVM library bases above indexed classes, distinguishes library links from source-backed `extends` relations, and supports component, object/sequence, and all-class scopes. Phase Map presents declared and effective inherited UVM phase implementations as a searchable matrix; every populated cell jumps to the implementing function or task. The left and right sidebars and the bottom source preview can be resized with a pointer or keyboard and restored by double-clicking their dividers.
 
 The TLM Connections view renders only connected endpoints as an interactive D3 diagram. It groups ports by `connect_phase` context and owner instance, preserves `context > instance` hierarchy paths, distinguishes port/export/implementation endpoints, and opens the exact connect-call source when a connection is selected.
 
