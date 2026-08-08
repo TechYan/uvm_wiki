@@ -188,6 +188,8 @@ class WebTests(unittest.TestCase):
         self.assertIn('id="indexBrowser"', html)
         self.assertIn("function summaryIndexItems", html)
         self.assertIn("function selectSummaryIndexEntry", html)
+        self.assertIn("function renderSourcePreview", html)
+        self.assertIn("renderSourcePreview(body.lines,line)", html)
         self.assertIn("focus-exit", html)
         self.assertIn("commitArchitectureBack", html)
         self.assertIn("resolveArchitecturePort", html)
