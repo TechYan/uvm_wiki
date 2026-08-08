@@ -44,7 +44,7 @@ python scripts/uvm_wiki.py build --src /path/to/uvm --parser auto --out /path/to
 This writes:
 
 - `uvm_wiki_ai.json`: canonical AI index.
-- `uvm_wiki.html`: unified Architecture, Wiki Graph, TLM Connections, and Code Explorer application. Architecture uses nested test/env containers, expandable agent internals, config blocks, TLM overlays, and virtual-interface boundaries. TLM Connections is an interactive endpoint graph grouped by connect context and instance path; selecting a wire locates the corresponding source call.
+- `uvm_wiki.html`: unified Architecture, Wiki Graph, TLM Connections, and Code Explorer application. Architecture uses nested test/env containers, expandable agent internals, routed TLM overlays, virtual-interface boundaries, and layered drill-down transitions. Single-click selects a component; double-click or its enter control opens it. Wiki Graph includes Obsidian-style inheritance and all-relation force views plus a multi-root topology forest; node positions can be adjusted and reset. Sidebars are resizable. TLM Connections is an interactive endpoint graph grouped by connect context and instance path; selecting a wire locates the corresponding source call.
 - `.cache/parse_cache.json`: file-level incremental cache.
 
 Build mode embeds bounded source snippets. Adjust or disable them when needed:
