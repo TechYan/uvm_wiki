@@ -226,16 +226,41 @@ function layoutArchPorts(scene){
     });
   });
   groups.forEach(list=>{const slots=d3.groups(list,item=>[item.endpoint?.port||item.endpoint?.expression||"endpoint",item.endpoint?.direction||"port",item.endpoint?.family||""].join("|")).map(([,items])=>({items,axis:d3.mean(items,item=>item.side==="left"||item.side==="right"?item.wire[item.which==="source"?"target":"source"].y+item.wire[item.which==="source"?"target":"source"].h/2:item.wire[item.which==="source"?"target":"source"].x+item.wire[item.which==="source"?"target":"source"].w/2)||0,label:String(items[0].endpoint?.port||"")})).sort((a,b)=>a.axis-b.axis||a.label.localeCompare(b.label));slots.forEach((slot,index)=>slot.items.forEach(item=>{item.anchor=archAnchorForSlot(item.node,item.side,index,slots.length);item.wire[item.which==="source"?"startAnchor":"endAnchor"]=item.anchor;item.wire[item.which==="source"?"sourceSlot":"targetSlot"]={index,total:slots.length}}))});
-  const routeGroups=d3.groups(scene.wires,wire=>{const horizontalSides=["left","right"],verticalSides=["top","bottom"];if(wire.source.uid===wire.target.uid)return"self";if(wire.kind!=="virtual_interface")return"x";if(horizontalSides.includes(wire.sourceSide)&&horizontalSides.includes(wire.targetSide))return"x";if(verticalSides.includes(wire.sourceSide)&&verticalSides.includes(wire.targetSide))return"y";return Math.abs(wire.endAnchor.x-wire.startAnchor.x)>=Math.abs(wire.endAnchor.y-wire.startAnchor.y)?"x":"y"});routeGroups.forEach(([axis,wires])=>wires.sort((a,b)=>a.startAnchor.y-b.startAnchor.y||a.endAnchor.y-b.endAnchor.y||a.startAnchor.x-b.startAnchor.x).forEach((wire,index)=>{const lane=index===0?0:(index%2?1:-1)*Math.ceil(index/2);wire.routeAxis=axis;wire.routeOffset=lane*12}));
+  const routeGroups=d3.groups(scene.wires,wire=>{const horizontalSides=["left","right"],verticalSides=["top","bottom"];let axis;if(wire.source.uid===wire.target.uid)axis="self";else if(wire.kind!=="virtual_interface")axis="x";else if(horizontalSides.includes(wire.sourceSide)&&horizontalSides.includes(wire.targetSide))axis="x";else if(verticalSides.includes(wire.sourceSide)&&verticalSides.includes(wire.targetSide))axis="y";else axis=Math.abs(wire.endAnchor.x-wire.startAnchor.x)>=Math.abs(wire.endAnchor.y-wire.startAnchor.y)?"x":"y";const pair=[wire.source.uid,wire.target.uid].sort().join("::");return`${axis}::${pair}`});routeGroups.forEach(([key,wires])=>{const axis=key.split("::",1)[0];wires.sort((a,b)=>a.startAnchor.y-b.startAnchor.y||a.endAnchor.y-b.endAnchor.y||a.startAnchor.x-b.startAnchor.x).forEach((wire,index)=>{const lane=index===0?0:(index%2?1:-1)*Math.ceil(index/2);wire.routeAxis=axis;wire.routeOffset=lane*10})});
   return entries;
 }
 function archPointOutside(anchor,side,distance=23){if(side==="left")return{x:anchor.x-distance,y:anchor.y};if(side==="right")return{x:anchor.x+distance,y:anchor.y};if(side==="top")return{x:anchor.x,y:anchor.y-distance};return{x:anchor.x,y:anchor.y+distance}}
-function roundedArchPath(points,radius=9){const clean=points.filter((point,index)=>!index||Math.abs(point.x-points[index-1].x)>.01||Math.abs(point.y-points[index-1].y)>.01);if(clean.length<2)return"";let path=`M${clean[0].x},${clean[0].y}`;for(let index=1;index<clean.length-1;index++){const previous=clean[index-1],current=clean[index],next=clean[index+1],beforeDistance=Math.hypot(current.x-previous.x,current.y-previous.y),afterDistance=Math.hypot(next.x-current.x,next.y-current.y),corner=Math.min(radius,beforeDistance/2,afterDistance/2);if(!corner){path+=`L${current.x},${current.y}`;continue}const before={x:current.x+(previous.x-current.x)/beforeDistance*corner,y:current.y+(previous.y-current.y)/beforeDistance*corner},after={x:current.x+(next.x-current.x)/afterDistance*corner,y:current.y+(next.y-current.y)/afterDistance*corner};path+=`L${before.x},${before.y}Q${current.x},${current.y} ${after.x},${after.y}`}const last=clean[clean.length-1];return`${path}L${last.x},${last.y}`}
+function orthogonalArchPath(points){
+  const clean=[];
+  points.forEach(point=>{
+    const last=clean[clean.length-1];
+    if(last&&Math.abs(point.x-last.x)<.01&&Math.abs(point.y-last.y)<.01)return;
+    if(clean.length>1){const previous=clean[clean.length-2],sameX=Math.abs(previous.x-last.x)<.01&&Math.abs(last.x-point.x)<.01,sameY=Math.abs(previous.y-last.y)<.01&&Math.abs(last.y-point.y)<.01;if(sameX||sameY){clean[clean.length-1]=point;return}}
+    clean.push(point);
+  });
+  return clean.length<2?"":clean.map((point,index)=>`${index?"L":"M"}${point.x},${point.y}`).join("");
+}
+function archFacingGap(a,sourceSide,b,targetSide){
+  if(sourceSide==="right"&&targetSide==="left"&&b.x>a.x)return b.x-a.x;
+  if(sourceSide==="left"&&targetSide==="right"&&a.x>b.x)return a.x-b.x;
+  if(sourceSide==="bottom"&&targetSide==="top"&&b.y>a.y)return b.y-a.y;
+  if(sourceSide==="top"&&targetSide==="bottom"&&a.y>b.y)return a.y-b.y;
+  return 0;
+}
+function archChannelBetween(first,second,offset){const low=Math.min(first,second),high=Math.max(first,second),span=high-low,guard=Math.min(10,span/4),preferred=(first+second)/2+offset;return Math.max(low+guard,Math.min(high-guard,preferred))}
 function archWirePath(wire,_index){
-  const a=wire.startAnchor,b=wire.endAnchor,offset=wire.routeOffset||0,outA=archPointOutside(a,wire.sourceSide),outB=archPointOutside(b,wire.targetSide);
-  if(wire.source.uid===wire.target.uid){const reach=42+Math.abs(offset),right=Math.max(a.x,b.x)+reach,left=Math.min(a.x,b.x)-reach,bottom=Math.max(a.y,b.y)+reach;return roundedArchPath([a,{x:right,y:a.y},{x:right,y:bottom},{x:left,y:bottom},{x:left,y:b.y},b],10)}
-  if(wire.routeAxis==="x"){const middle=(outA.x+outB.x)/2+offset;return roundedArchPath([a,outA,{x:middle,y:outA.y},{x:middle,y:outB.y},outB,b],10)}
-  const middle=(outA.y+outB.y)/2+offset;return roundedArchPath([a,outA,{x:outA.x,y:middle},{x:outB.x,y:middle},outB,b],10);
+  const a=wire.startAnchor,b=wire.endAnchor,offset=wire.routeOffset||0;
+  if(wire.source.uid===wire.target.uid){const reach=42+Math.min(Math.abs(offset),50),right=Math.max(a.x,b.x)+reach,left=Math.min(a.x,b.x)-reach,bottom=Math.max(a.y,b.y)+reach;return orthogonalArchPath([a,{x:right,y:a.y},{x:right,y:bottom},{x:left,y:bottom},{x:left,y:b.y},b])}
+  const gap=archFacingGap(a,wire.sourceSide,b,wire.targetSide),exitDistance=gap?Math.max(4,Math.min(23,gap*.22)):23,outA=archPointOutside(a,wire.sourceSide,exitDistance),outB=archPointOutside(b,wire.targetSide,exitDistance);
+  if(gap&&wire.routeAxis==="x"){const middle=archChannelBetween(outA.x,outB.x,offset);return orthogonalArchPath([a,outA,{x:middle,y:outA.y},{x:middle,y:outB.y},outB,b])}
+  if(gap&&wire.routeAxis==="y"){const middle=archChannelBetween(outA.y,outB.y,offset);return orthogonalArchPath([a,outA,{x:outA.x,y:middle},{x:outB.x,y:middle},outB,b])}
+  const lane=34+Math.min(Math.abs(offset),50);
+  if(wire.routeAxis==="x"){
+    const top=Math.min(wire.source.y,wire.target.y)-lane,bottom=Math.max(wire.source.y+wire.source.h,wire.target.y+wire.target.h)+lane,channel=Math.abs(a.y-top)+Math.abs(b.y-top)<=Math.abs(a.y-bottom)+Math.abs(b.y-bottom)?top:bottom;
+    return orthogonalArchPath([a,outA,{x:outA.x,y:channel},{x:outB.x,y:channel},outB,b]);
+  }
+  const left=Math.min(wire.source.x,wire.target.x)-lane,right=Math.max(wire.source.x+wire.source.w,wire.target.x+wire.target.w)+lane,channel=Math.abs(a.x-left)+Math.abs(b.x-left)<=Math.abs(a.x-right)+Math.abs(b.x-right)?left:right;
+  return orthogonalArchPath([a,outA,{x:channel,y:outA.y},{x:channel,y:outB.y},outB,b]);
 }
 function archWireRelation(wire){return{kind:wire.kind,source:wire.lhs,target:wire.rhs,context:wire.context,file:wire.file,line:wire.line}}
 function archClassToken(value){return String(value||"").replace(/[^a-zA-Z0-9_-]/g,"-")}
