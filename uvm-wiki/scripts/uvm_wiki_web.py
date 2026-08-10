@@ -725,7 +725,11 @@ class WikiRequestHandler(BaseHTTPRequestHandler):
 
 
 def serve_html(data: dict[str, Any], source_root: Path, host: str, port: int) -> None:
-    handler = type("ConfiguredWikiHandler", (WikiRequestHandler,), {"html_text": render_html(data), "source_root": source_root.resolve()})
+    serve_html_text(render_html(data), source_root, host, port)
+
+
+def serve_html_text(html_text: str, source_root: Path, host: str, port: int) -> None:
+    handler = type("ConfiguredWikiHandler", (WikiRequestHandler,), {"html_text": html_text, "source_root": source_root.resolve()})
     server = ThreadingHTTPServer((host, port), handler)
     print(f"UVM Wiki serving http://{host}:{port}")
     print(f"Source root: {source_root.resolve()}")

@@ -11,7 +11,7 @@ UVM Wiki 用于静态索引 SystemVerilog/UVM 工程，输出：
 
 | 输入方式 | 行为 | 适用场景 |
 | --- | --- | --- |
-| `--src` | 递归扫描目录中的 `.sv/.svh/.v/.vh/.inc/.svi/.pkg` | 代码目录较干净，或者没有维护 filelist |
+| `--src` | 递归扫描目录中的 `.sv/.svh/.svp/.v/.vh/.inc/.svi/.pkg` | 代码目录较干净，或者没有维护 filelist |
 | `--filelist` | 只索引 filelist 中的源文件及工程内 `` `include`` 文件 | 工程较大，希望结果与实际编译清单一致 |
 
 > UVM Wiki 是静态代码索引工具，不替代仿真器编译和 elaboration。pyslang 用于逐文件语法解析；filelist 用于确定文件范围、include 路径和宏定义。
@@ -154,7 +154,7 @@ mkdir -p "$HOME/uvm_wiki_output/demo"
   --out "$HOME/uvm_wiki_output/uvc"
 ```
 
-目录模式会递归读取 `--src` 下的 `.sv`、`.svh`、`.v`、`.vh`，并跳过 `.git`、`node_modules`、`__pycache__` 等目录。
+目录模式会递归读取 `--src` 下的 `.sv`、`.svh`、`.svp`、`.v`、`.vh`、`.inc`、`.svi`、`.pkg`，并跳过 `.git`、`node_modules`、`__pycache__` 等目录。
 
 ### 5.2 Filelist 模式
 
@@ -270,6 +270,17 @@ xdg-open "$HOME/uvm_wiki_output/project/uvm_wiki.html"
 ```text
 http://127.0.0.1:8765/
 ```
+
+如果 `uvm_wiki.html` 和 `uvm_wiki_ai.json` 已经生成，可以跳过扫描和解析，直接启动完整源码阅读与全文检索服务：
+
+```bash
+"$UVM_WIKI_PY" "$UVM_WIKI_HOME/scripts/uvm_wiki.py" serve-existing \
+  --src /project \
+  --out "$HOME/uvm_wiki_output/project" \
+  --port 8765
+```
+
+`serve-existing` 不需要 `--filelist`、`--parser` 或 pyslang。`--src` 仍然必须指向原工程源码根目录，它同时是完整源码读取和全文检索的安全边界。
 
 后台启动：
 

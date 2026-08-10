@@ -287,6 +287,38 @@ class FilelistTests(unittest.TestCase):
             )
             self.assertIn("bundled_agent", [item["name"] for item in data["symbols"]])
 
+    def test_svp_package_include_is_indexed_by_light_parser(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "bundled_agent.svp").write_text(
+                "class svp_agent extends uvm_agent; endclass\n",
+                encoding="utf-8",
+            )
+            (root / "vip_pkg.sv").write_text(
+                '`include "bundled_agent.svp"\npackage vip_pkg; endpackage\n',
+                encoding="utf-8",
+            )
+            filelist = root / "files.f"
+            filelist.write_text("./vip_pkg.sv\n", encoding="utf-8")
+
+            spec = parse_filelists([filelist])
+            expand_project_includes(spec, root)
+            relative_sources = [path.relative_to(root).as_posix() for path in spec.sources]
+            data = build_index(
+                source_root=root,
+                parser_requested="light",
+                cache_path=root / "output" / "parse_cache.json",
+                source_context=0,
+                source_paths=spec.sources,
+                include_dirs=spec.include_dirs,
+                defines=spec.defines,
+                input_metadata=spec.metadata(root),
+            )
+
+            self.assertEqual(relative_sources, ["vip_pkg.sv", "bundled_agent.svp"])
+            self.assertEqual(data["metadata"]["input"]["included_files"], 1)
+            self.assertIn("svp_agent", [item["name"] for item in data["symbols"]])
+
     def test_include_outside_source_root_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)

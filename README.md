@@ -34,7 +34,7 @@ The wheel checksum is verified before installation. The default environment is `
 
 ## Build
 
-Directory scan mode recursively indexes supported HDL files under `--src`:
+Directory scan mode recursively indexes `.sv`, `.svh`, `.svp`, `.v`, `.vh`, `.inc`, `.svi`, and `.pkg` files under `--src`:
 
 ```bash
 ~/.local/share/uvm-wiki/venv/bin/python \
@@ -79,6 +79,16 @@ Portable build mode embeds bounded snippets. To browse and search the complete s
 ```
 
 Open `http://127.0.0.1:8765`. The server rejects paths outside `--src` and serves only supported HDL source extensions.
+
+To start the source API from existing outputs without scanning or parsing again:
+
+```bash
+~/.local/share/uvm-wiki/venv/bin/python \
+  ~/.codex/skills/uvm-wiki/scripts/uvm_wiki.py serve-existing \
+  --src /path/to/uvm/source \
+  --out /path/to/output \
+  --port 8765
+```
 
 ## Codex Usage
 

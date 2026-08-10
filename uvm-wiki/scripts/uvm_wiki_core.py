@@ -17,7 +17,7 @@ SCHEMA_VERSION = "uvm-wiki-ai.v1"
 ARCHITECTURE_SCHEMA_VERSION = "uvm-architecture.v2"
 CACHE_VERSION = 8
 PYSLANG_AST_MAX_BYTES = 512 * 1024
-SOURCE_EXTS = {".sv", ".svh", ".v", ".vh", ".inc", ".svi", ".pkg"}
+SOURCE_EXTS = {".sv", ".svh", ".svp", ".v", ".vh", ".inc", ".svi", ".pkg"}
 SKIP_DIRS = {".git", ".svn", "__pycache__", ".uvm_wiki", "node_modules"}
 OPAQUE_EXTS = {".zip", ".tgz", ".gz", ".so", ".dll", ".a", ".o", ".obj", ".exe", ".key", ".pem"}
 

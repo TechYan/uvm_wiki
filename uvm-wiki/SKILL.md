@@ -70,6 +70,12 @@ Use serve mode for complete source files and full-text search:
 python scripts/uvm_wiki.py serve --src /path/to/uvm --filelist /path/to/uvm/files.f --parser auto --out /path/to/output --port 8765
 ```
 
+To reuse existing HTML and JSON without scanning or parsing again:
+
+```bash
+python scripts/uvm_wiki.py serve-existing --src /path/to/uvm --out /path/to/output --port 8765
+```
+
 Open `http://127.0.0.1:8765`. The service is read-only, binds to loopback, rejects traversal outside `--src`, and serves only SystemVerilog source extensions.
 
 ## Reuse The Index

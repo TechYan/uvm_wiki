@@ -15,7 +15,10 @@ from uvm_wiki_filelist import (
     parse_filelists,
     require_sources_within_root,
 )
-from uvm_wiki_web import serve_html, write_html
+from uvm_wiki_web import serve_html, serve_html_text, write_html
+
+
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 def output_directory(source: Path, value: str | None, default_name: str | None = None) -> Path:
@@ -120,10 +123,33 @@ def command_build(args: argparse.Namespace) -> int:
 
 
 def command_serve(args: argparse.Namespace) -> int:
-    if args.host not in {"127.0.0.1", "localhost", "::1"}:
+    if args.host not in LOOPBACK_HOSTS:
         raise SystemExit("serve mode only permits loopback hosts: 127.0.0.1, localhost, or ::1")
     data, source, _ = build_project(args)
     serve_html(data, source, args.host, args.port)
+    return 0
+
+
+def command_serve_existing(args: argparse.Namespace) -> int:
+    if args.host not in LOOPBACK_HOSTS:
+        raise SystemExit("serve mode only permits loopback hosts: 127.0.0.1, localhost, or ::1")
+    source = Path(args.src).expanduser().resolve()
+    output = Path(args.out).expanduser().resolve()
+    html_path = output / "uvm_wiki.html"
+    json_path = output / "uvm_wiki_ai.json"
+    if not source.is_dir():
+        raise SystemExit(f"source directory does not exist: {source}")
+    if not html_path.is_file():
+        raise SystemExit(f"generated HTML does not exist: {html_path}")
+    if not json_path.is_file():
+        raise SystemExit(f"generated JSON does not exist: {json_path}")
+    try:
+        json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"cannot read generated JSON: {json_path}: {exc}") from exc
+    print(f"Using existing HTML: {html_path}")
+    print(f"Using existing JSON: {json_path}")
+    serve_html_text(html_path.read_text(encoding="utf-8"), source, args.host, args.port)
     return 0
 
 
@@ -152,6 +178,15 @@ def make_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="127.0.0.1", help="loopback host; default: 127.0.0.1")
     serve.add_argument("--port", type=int, default=8765, help="HTTP port; default: 8765")
     serve.set_defaults(func=command_serve)
+    serve_existing = subparsers.add_parser(
+        "serve-existing",
+        help="serve existing outputs with full-source lookup, without scanning or parsing",
+    )
+    serve_existing.add_argument("--src", required=True, help="source root exposed by the read-only source API")
+    serve_existing.add_argument("--out", required=True, help="directory containing uvm_wiki.html and uvm_wiki_ai.json")
+    serve_existing.add_argument("--host", default="127.0.0.1", help="loopback host; default: 127.0.0.1")
+    serve_existing.add_argument("--port", type=int, default=8765, help="HTTP port; default: 8765")
+    serve_existing.set_defaults(func=command_serve_existing)
     doctor = subparsers.add_parser("doctor", help="show Python and parser availability")
     doctor.set_defaults(func=command_doctor)
     return parser

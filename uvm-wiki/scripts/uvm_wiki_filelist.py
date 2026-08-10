@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
-SOURCE_EXTS = {".sv", ".svh", ".v", ".vh", ".inc", ".svi", ".pkg"}
+SOURCE_EXTS = {".sv", ".svh", ".svp", ".v", ".vh", ".inc", ".svi", ".pkg"}
 EXTERNAL_INCLUDE_NAMES = {"uvm_macros.svh"}
 INCLUDE_RE = re.compile(r"^[ \t]*`include[ \t]+([^\r\n]+)", re.MULTILINE)
 DEFINE_RE = re.compile(
