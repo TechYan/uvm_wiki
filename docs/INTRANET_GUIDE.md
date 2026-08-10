@@ -364,7 +364,7 @@ driver 与 sequencer 的连接，以及 monitor 数据最终送到哪些组件�
 
 UVM Wiki 基于静态源码。factory override、条件 build、循环创建数量和最终 config-db 结果需要结合仿真日志确认。
 
-如果 factory create 带有 parent 参数，但目标 class 定义没有进入索引，Architecture 和 Topology 都会分别显示每条静态实例证据，不再按相同 type 合并；Topology 中同一父组件下的多个同类型实例也会保留为独立节点。点击节点会跳到各自的 create 语句。右侧 Related 区域可以按 `creates`、`has_member`、`extends` 等 relation 类型筛选并搜索。优先检查构建日志以及 `metadata.input.unresolved_includes`；这通常表示 package 引入的 VIP 文件没有被找到或超出了 `--src`。
+如果 factory create 带有 parent 参数，但目标 class 定义没有进入索引，Architecture 和 Topology 都会分别显示每条静态实例证据，不再按相同 type 合并；Topology 中同一父组件下的多个同类型实例也会保留为独立节点。大型工程的初始 Topology 会限制全局节点数量，点击某个 test、env 或 agent 后会补回该节点完整的已索引下级结构。点击节点还会跳到各自的 create 语句。右侧 Related 区域可以按 `creates`、`has_member`、`extends` 等 relation 类型筛选并搜索。优先检查构建日志以及 `metadata.input.unresolved_includes`；这通常表示 package 引入的 VIP 文件没有被找到或超出了 `--src`。
 
 ### TLM 连接缺失
 
