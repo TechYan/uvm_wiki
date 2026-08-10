@@ -83,6 +83,36 @@ endclass
         self.assertEqual(len(tree["children"]["sample_env"]), 1)
         self.assertEqual(tree["children"]["sample_env"][0]["kind"], "creates")
 
+    def test_missing_factory_type_remains_visible_in_topology_and_architecture(self) -> None:
+        symbols = [
+            {"kind": "class", "name": "sample_env", "base": "uvm_env", "role": "env", "file": "env.sv", "line": 1},
+        ]
+        relations = [
+            {
+                "kind": "creates",
+                "source": "sample_env",
+                "target": "vendor_pkg.vendor_agent",
+                "instance": "agent",
+                "parent": "this",
+                "file": "env.sv",
+                "line": 12,
+            },
+        ]
+
+        topology = build_hierarchies(symbols, relations)["topology"]
+        architecture = build_uvm_architecture(symbols, relations)
+
+        topology_edge = topology["children"]["sample_env"][0]
+        self.assertEqual((topology_edge["id"], topology_edge["instance"]), ("vendor_agent", "agent"))
+        self.assertTrue(topology_edge["definition_missing"])
+        architecture_edge = architecture["components"]["sample_env"]["children"][0]
+        self.assertEqual((architecture_edge["type"], architecture_edge["instance"]), ("vendor_agent", "agent"))
+        self.assertEqual(architecture_edge["qualified_type"], "vendor_pkg.vendor_agent")
+        self.assertEqual(architecture_edge["role"], "agent")
+        self.assertTrue(architecture_edge["definition_missing"])
+        self.assertEqual(architecture_edge["line"], 12)
+        self.assertEqual(architecture["unresolved_components"][0]["type"], "vendor_agent")
+
     def test_uvm_architecture_filters_objects_and_merges_inherited_children(self) -> None:
         symbols = [
             {"kind": "class", "name": "base_test", "base": "uvm_test", "role": "test", "file": "tb.sv", "line": 1},
@@ -214,6 +244,69 @@ class FilelistTests(unittest.TestCase):
             self.assertEqual(data["metadata"]["input"]["included_files"], 1)
             self.assertNotIn("src/not_listed.sv", [item["path"] for item in data["files"]])
 
+    def test_macro_stringify_include_closure_is_indexed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "include").mkdir()
+            (root / "include" / "defs.svh").write_text(
+                '`define STRINGIFY_VALUE(value) `"value`"\n',
+                encoding="utf-8",
+            )
+            (root / "include" / "vip_impl.svh").write_text(
+                "class bundled_agent extends uvm_agent; endclass\n",
+                encoding="utf-8",
+            )
+            (root / "pkg.sv").write_text(
+                '`include "defs.svh"\n`include `STRINGIFY_VALUE(`VIP_FILE)\npackage bundled_pkg; endpackage\n',
+                encoding="utf-8",
+            )
+            filelist = root / "files.f"
+            filelist.write_text(
+                "+incdir+./include\n+define+VIP_FILE=vip_impl.svh\n./pkg.sv\n",
+                encoding="utf-8",
+            )
+
+            spec = parse_filelists([filelist])
+            expand_project_includes(spec, root)
+            relative_sources = [path.relative_to(root).as_posix() for path in spec.sources]
+            metadata = spec.metadata(root)
+
+            self.assertEqual(relative_sources, ["pkg.sv", "include/defs.svh", "include/vip_impl.svh"])
+            self.assertEqual(metadata["include_directives"], 2)
+            self.assertEqual(metadata["macro_include_directives"], 1)
+            self.assertEqual(metadata["unresolved_includes"], [])
+            data = build_index(
+                source_root=root,
+                parser_requested="light",
+                cache_path=root / "output" / "parse_cache.json",
+                source_context=0,
+                source_paths=spec.sources,
+                include_dirs=spec.include_dirs,
+                defines=spec.defines,
+                input_metadata=metadata,
+            )
+            self.assertIn("bundled_agent", [item["name"] for item in data["symbols"]])
+
+    def test_include_outside_source_root_is_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            root = workspace / "project"
+            vendor = workspace / "vendor"
+            root.mkdir()
+            vendor.mkdir()
+            (vendor / "outside.svh").write_text("class outside_agent; endclass\n", encoding="utf-8")
+            (root / "pkg.sv").write_text('`include "../vendor/outside.svh"\n', encoding="utf-8")
+            filelist = root / "files.f"
+            filelist.write_text("./pkg.sv\n", encoding="utf-8")
+
+            spec = parse_filelists([filelist])
+            expand_project_includes(spec, root)
+            metadata = spec.metadata(root)
+
+            self.assertEqual(len(spec.sources), 1)
+            self.assertEqual(len(metadata["outside_root_includes"]), 1)
+            self.assertIn("outside --src boundary", metadata["warnings"][-1])
+
 
 class WebTests(unittest.TestCase):
     def test_source_payload_rejects_traversal(self) -> None:
@@ -327,6 +420,8 @@ class WebTests(unittest.TestCase):
         self.assertIn("tlm-wire-halo", html)
         self.assertIn('id="codeCategory"', html)
         self.assertIn("UVM_COMPONENT_ROLES", html)
+        self.assertIn("definition-missing", html)
+        self.assertIn("definitionMissing", html)
 
 
 if __name__ == "__main__":

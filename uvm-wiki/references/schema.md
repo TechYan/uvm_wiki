@@ -6,7 +6,7 @@
 
 - `schema_version`: stable schema identifier.
 - `metadata`: source root, source fingerprint, requested/effective parser, input mode, generation time, and cache statistics.
-- `stats`: counts for files, classes, symbols, relations, ports, and connections.
+- `stats`: counts for files, classes, symbols, relations, ports, connections, and unresolved component types.
 - `files`: source file paths, hashes, parser, and pyslang diagnostic counts.
 - `symbols`: class, module, interface, package, function, and task declarations.
 - `relations`: inheritance, component creation, members, includes, imports, config-db operations, TLM declarations, and connect calls.
@@ -59,18 +59,19 @@ Important fields:
 
 - `roots`: candidate test, env, and component roots ordered for architecture browsing.
 - `components`: effective component definitions after inherited child, port, config, and connect facts are merged.
-- `components.<type>.children`: child instance edges with inferred instance role, source location, confidence, and inheritance state.
+- `components.<type>.children`: child instance edges with inferred instance role, source location, confidence, and inheritance state. `definition_missing: true` means factory-create evidence exists but no matching class definition was indexed.
 - `components.<type>.auxiliaries`: config objects kept outside the component topology but available to the architecture view.
 - `components.<type>.ports`: effective TLM port/export/imp declarations.
 - `components.<type>.connections`: effective TLM connections with resolved source and target endpoint records.
 - `components.<type>.virtual_interfaces`: virtual-interface config-db accesses associated with the component.
 - `connections`: directly declared architecture connections across component types.
+- `unresolved_components`: missing component types grouped with every parent, instance, create location, and inheritance state that references them.
 - `externals`: indexed HDL interfaces and modules; no DUT binding is inferred without source evidence.
 
 Resolved connection endpoints include `instance_path`, `owner_type`, `owner_role`, `port`, `port_type`, `family`, `direction`, `path_resolved`, `port_declared`, and `confidence`. `direction` distinguishes UVM port, export, and implementation endpoints. A path can be resolved even when a built-in UVM port declaration is not present in the indexed repository.
 
 ## Input Metadata
 
-`metadata.input.mode` is `directory` or `filelist`. Filelist mode also records top-level and nested filelists, listed and include-discovered file counts, include directories, defines, ignored simulator options, and resolution warnings. These fields describe static index selection; they do not claim simulator elaboration or compile success.
+`metadata.input.mode` is `directory` or `filelist`. Filelist mode also records top-level and nested filelists, listed and include-discovered file counts, include directories, defines, ignored simulator options, and resolution warnings. `include_directives` and `macro_include_directives` count the discovered package/header directives. `unresolved_includes` and `outside_root_includes` retain source-line diagnostics for code that could not enter the index. Literal includes, object macros, and common stringify macro wrappers are expanded recursively. These fields describe static index selection; they do not claim simulator elaboration or compile success.
 
 The projection is static. Runtime factory overrides, conditional build paths, dynamic instance counts, final config-db effects, and exact BFM/DUT binding require simulation topology, logs, or a future user-provided overlay.

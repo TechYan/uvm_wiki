@@ -17,7 +17,7 @@ SCHEMA_VERSION = "uvm-wiki-ai.v1"
 ARCHITECTURE_SCHEMA_VERSION = "uvm-architecture.v2"
 CACHE_VERSION = 8
 PYSLANG_AST_MAX_BYTES = 512 * 1024
-SOURCE_EXTS = {".sv", ".svh", ".v", ".vh"}
+SOURCE_EXTS = {".sv", ".svh", ".v", ".vh", ".inc", ".svi", ".pkg"}
 SKIP_DIRS = {".git", ".svn", "__pycache__", ".uvm_wiki", "node_modules"}
 OPAQUE_EXTS = {".zip", ".tgz", ".gz", ".so", ".dll", ".a", ".o", ".obj", ".exe", ".key", ".pem"}
 
@@ -538,13 +538,29 @@ def build_hierarchies(symbols: list[dict[str, Any]], relations: list[dict[str, A
             if relation.get("kind") not in kinds:
                 continue
             source = str(relation.get("source", "")).split(".", 1)[0]
-            target = str(relation.get("target", ""))
+            target = str(relation.get("target", "")).split(".")[-1]
             parent, child = (target, source) if reverse else (source, target)
             if not parent or not child or parent == child:
                 continue
-            if not reverse and (parent not in classes or child not in classes):
-                continue
-            item = {"id": child, "instance": relation.get("instance"), "kind": relation.get("kind"), "file": relation.get("file"), "line": relation.get("line")}
+            definition_missing = child not in classes
+            if not reverse:
+                if parent not in classes:
+                    continue
+                # A parent-bearing factory create is sufficient instance evidence
+                # even when the vendor component type is outside the index.
+                if definition_missing and not (
+                    relation.get("kind") == "creates" and relation.get("parent")
+                ):
+                    continue
+            item = {
+                "id": child,
+                "instance": relation.get("instance"),
+                "kind": relation.get("kind"),
+                "file": relation.get("file"),
+                "line": relation.get("line"),
+            }
+            if not reverse and definition_missing:
+                item["definition_missing"] = True
             instance_key = "" if reverse else str(item.get("instance") or "")
             edge_key = (parent, child, instance_key)
             siblings = children.setdefault(parent, [])
@@ -735,6 +751,9 @@ def build_uvm_architecture(symbols: list[dict[str, Any]], relations: list[dict[s
         }
         if relation.get("instance_name"):
             edge["instance_name"] = relation["instance_name"]
+        qualified_type = str(relation.get("target") or "")
+        if qualified_type and qualified_type != target:
+            edge["qualified_type"] = qualified_type
         return edge
 
     direct_children: dict[str, dict[str, dict[str, Any]]] = {}
@@ -744,10 +763,19 @@ def build_uvm_architecture(symbols: list[dict[str, Any]], relations: list[dict[s
             continue
         source = class_name(str(relation.get("source") or "").split(".", 1)[0])
         target = class_name(relation.get("target"))
-        if source not in component_names or target not in classes or source == target:
+        if source not in component_names or source == target:
             continue
         instance = str(relation.get("instance") or "").strip()
-        if target in component_names:
+        definition_missing = target not in classes
+        if definition_missing:
+            # uvm_component factory creation carries a parent argument. Keep
+            # that evidence without promoting unknown uvm_object creates.
+            if relation.get("kind") != "creates" or not relation.get("parent"):
+                continue
+            edge = relation_edge(relation, source, target, inferred_instance_role(target, instance))
+            edge["definition_missing"] = True
+            siblings = direct_children.setdefault(source, {})
+        elif target in component_names:
             edge = relation_edge(relation, source, target, inferred_instance_role(target, instance))
             siblings = direct_children.setdefault(source, {})
         else:
@@ -1056,6 +1084,28 @@ def build_uvm_architecture(symbols: list[dict[str, Any]], relations: list[dict[s
             "connection_count": len(connections),
         }
 
+    unresolved_by_type: dict[str, dict[str, Any]] = {}
+    for owner, component in components.items():
+        for child in component["children"]:
+            if not child.get("definition_missing"):
+                continue
+            type_name = str(child.get("type") or "")
+            unresolved = unresolved_by_type.setdefault(
+                type_name,
+                {"type": type_name, "role": child.get("role") or "component", "instances": []},
+            )
+            unresolved["instances"].append(
+                {
+                    "owner": owner,
+                    "instance": child.get("instance"),
+                    "relation": child.get("relation"),
+                    "file": child.get("file"),
+                    "line": child.get("line"),
+                    "inherited": child.get("inherited", False),
+                }
+            )
+    unresolved_components = sorted(unresolved_by_type.values(), key=lambda item: item["type"])
+
     contained_types = {str(child.get("type")) for item in components.values() for child in item["children"]}
     candidates = [name for name, item in components.items() if item["child_count"] and item["role"] == "test"]
     candidates.extend(name for name, item in components.items() if item["child_count"] and item["role"] == "env" and name not in contained_types)
@@ -1131,6 +1181,7 @@ def build_uvm_architecture(symbols: list[dict[str, Any]], relations: list[dict[s
         "default_root": candidates[0] if candidates else None,
         "roots": roots,
         "components": components,
+        "unresolved_components": unresolved_components,
         "connections": architecture_connections,
         "externals": {"interfaces": external_interfaces, "modules": external_modules},
     }
@@ -1265,8 +1316,9 @@ def build_index(
     symbols = _dedupe(symbols, ("id", "kind", "file", "line"))
     class_names = {symbol["name"] for symbol in symbols if symbol.get("kind") == "class"}
     for field in fields:
-        if field.get("type") in class_names and field.get("owner") in class_names:
-            relations.append({"kind": "has_member", "source": field["owner"], "target": field["type"], "instance": field.get("instance"), "file": field.get("file"), "line": field.get("line")})
+        field_type = str(normalize_type(str(field.get("type") or "")) or "").split(".")[-1]
+        if field_type in class_names and field.get("owner") in class_names:
+            relations.append({"kind": "has_member", "source": field["owner"], "target": field_type, "instance": field.get("instance"), "file": field.get("file"), "line": field.get("line")})
     relations = _dedupe(relations, ("kind", "source", "target", "instance", "file", "line"))
 
     fingerprint = hashlib.sha256()
@@ -1302,6 +1354,7 @@ def build_index(
             "ports": len(tlm["ports"]),
             "connections": len(tlm["connections"]),
             "components": len(architecture["components"]),
+            "unresolved_components": len(architecture["unresolved_components"]),
             "architecture_roots": len(architecture["roots"]),
             "roles": dict(role_counts),
             "relation_kinds": dict(relation_counts),

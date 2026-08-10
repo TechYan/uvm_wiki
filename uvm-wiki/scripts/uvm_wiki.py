@@ -96,6 +96,21 @@ def build_project(args: argparse.Namespace) -> tuple[dict, Path, Path]:
         f"files={stats['files']} classes={stats['classes']} relations={stats['relations']} "
         f"parser={data['metadata']['parser_effective']} reused={cache['reused_files']} reparsed={cache['reparsed_files']}"
     )
+    input_info = data["metadata"].get("input", {})
+    if input_info.get("mode") == "filelist":
+        print(
+            "Filelist includes "
+            f"directives={input_info.get('include_directives', 0)} "
+            f"macro={input_info.get('macro_include_directives', 0)} "
+            f"indexed={input_info.get('included_files', 0)} "
+            f"unresolved={len(input_info.get('unresolved_includes', []))} "
+            f"outside_src={len(input_info.get('outside_root_includes', []))}"
+        )
+        warnings = list(input_info.get("warnings", []))
+        for warning in warnings[:10]:
+            print(f"Warning: {warning}")
+        if len(warnings) > 10:
+            print(f"Warning: {len(warnings) - 10} more warning(s) are recorded in uvm_wiki_ai.json")
     return data, source, html_path
 
 

@@ -11,7 +11,7 @@ UVM Wiki 用于静态索引 SystemVerilog/UVM 工程，输出：
 
 | 输入方式 | 行为 | 适用场景 |
 | --- | --- | --- |
-| `--src` | 递归扫描目录中的 `.sv/.svh/.v/.vh` | 代码目录较干净，或者没有维护 filelist |
+| `--src` | 递归扫描目录中的 `.sv/.svh/.v/.vh/.inc/.svi/.pkg` | 代码目录较干净，或者没有维护 filelist |
 | `--filelist` | 只索引 filelist 中的源文件及工程内 `` `include`` 文件 | 工程较大，希望结果与实际编译清单一致 |
 
 > UVM Wiki 是静态代码索引工具，不替代仿真器编译和 elaboration。pyslang 用于逐文件语法解析；filelist 用于确定文件范围、include 路径和宏定义。
@@ -201,7 +201,9 @@ mkdir -p "$HOME/uvm_wiki_output/demo"
 
 filelist 文本支持 UTF-8、GB18030/GBK 和 Latin-1 编码。
 
-`-y`、`+libext+`、`-top`、`-timescale` 等仿真器选项不会参与静态索引，会记录在 `metadata.input.ignored_options` 中。工程内可解析的 `` `include`` 文件会自动加入索引；UVM 库本身不会被复制进工程索引。
+`-y`、`+libext+`、`-top`、`-timescale` 等仿真器选项不会参与静态索引，会记录在 `metadata.input.ignored_options` 中。工程内可解析的 `` `include`` 文件会自动加入索引；支持字面量文件名、对象宏和常见 stringify 宏包装。查找顺序为当前源码目录、`+incdir`/`-I`、filelist 所在目录和 `--src`。UVM 库本身不会被复制进工程索引。
+
+构建结束时会打印 include 统计。完整诊断保存在 `uvm_wiki_ai.json` 的 `metadata.input.unresolved_includes`、`outside_root_includes` 和 `warnings` 中。越过 `--src` 的 include 不会静默忽略；需要扩大 `--src` 后重新构建。
 
 ### 5.3 Parser 模式
 
@@ -350,6 +352,8 @@ driver 与 sequencer 的连接，以及 monitor 数据最终送到哪些组件�
 ### 图中缺少 runtime 实例
 
 UVM Wiki 基于静态源码。factory override、条件 build、循环创建数量和最终 config-db 结果需要结合仿真日志确认。
+
+如果 factory create 带有 parent 参数，但目标 class 定义没有进入索引，Architecture 和 Topology 仍会显示该实例，并标记 `definition missing`。点击节点会跳到 create 语句。优先检查构建日志以及 `metadata.input.unresolved_includes`；这通常表示 package 引入的 VIP 文件没有被找到或超出了 `--src`。
 
 ### TLM 连接缺失
 
