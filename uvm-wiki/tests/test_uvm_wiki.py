@@ -477,6 +477,11 @@ class WebTests(unittest.TestCase):
         self.assertIn("ARCH.unresolved_components", html)
         self.assertIn("node.definition_missing", html)
         self.assertIn("mandatory.has(edge.target)", html)
+        self.assertIn("selectedNodeId", html)
+        self.assertIn("rel.instance||rel.instance_name", html)
+        self.assertIn("data-topology-node", html)
+        self.assertIn("node=>node.id", html)
+        self.assertNotIn('state.graphMode==="topology"?`${source}|${target}`', html)
         self.assertNotIn('`${instances[0]} x${instances.length}`', html)
 
 
