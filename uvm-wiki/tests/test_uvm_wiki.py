@@ -97,6 +97,15 @@ endclass
                 "file": "env.sv",
                 "line": 12,
             },
+            {
+                "kind": "creates",
+                "source": "sample_env",
+                "target": "vendor_pkg.vendor_agent",
+                "instance": "agent_backup",
+                "parent": "this",
+                "file": "env.sv",
+                "line": 13,
+            },
         ]
 
         topology = build_hierarchies(symbols, relations)["topology"]
@@ -105,6 +114,10 @@ endclass
         topology_edge = topology["children"]["sample_env"][0]
         self.assertEqual((topology_edge["id"], topology_edge["instance"]), ("vendor_agent", "agent"))
         self.assertTrue(topology_edge["definition_missing"])
+        self.assertEqual(
+            [(item["id"], item["instance"]) for item in topology["children"]["sample_env"]],
+            [("vendor_agent", "agent"), ("vendor_agent", "agent_backup")],
+        )
         architecture_edge = architecture["components"]["sample_env"]["children"][0]
         self.assertEqual((architecture_edge["type"], architecture_edge["instance"]), ("vendor_agent", "agent"))
         self.assertEqual(architecture_edge["qualified_type"], "vendor_pkg.vendor_agent")
@@ -112,6 +125,10 @@ endclass
         self.assertTrue(architecture_edge["definition_missing"])
         self.assertEqual(architecture_edge["line"], 12)
         self.assertEqual(architecture["unresolved_components"][0]["type"], "vendor_agent")
+        self.assertEqual(
+            [item["instance"] for item in architecture["unresolved_components"][0]["instances"]],
+            ["agent", "agent_backup"],
+        )
 
     def test_uvm_architecture_filters_objects_and_merges_inherited_children(self) -> None:
         symbols = [
@@ -454,6 +471,13 @@ class WebTests(unittest.TestCase):
         self.assertIn("UVM_COMPONENT_ROLES", html)
         self.assertIn("definition-missing", html)
         self.assertIn("definitionMissing", html)
+        self.assertIn('id="relationKind"', html)
+        self.assertIn('id="relationSearch"', html)
+        self.assertIn("function bindRelationFilters", html)
+        self.assertIn("ARCH.unresolved_components", html)
+        self.assertIn("node.definition_missing", html)
+        self.assertIn("mandatory.has(edge.target)", html)
+        self.assertNotIn('`${instances[0]} x${instances.length}`', html)
 
 
 if __name__ == "__main__":
